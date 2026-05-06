@@ -16,6 +16,7 @@ scipy = "*"
 [tool.poetry.group.dev.dependencies]
 pytest = "*"
 pytest-cov = "*"
+scikit-learn = "*"
 
 [build-system]
 requires = ["poetry-core"]
