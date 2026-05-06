@@ -1,0 +1,25 @@
+[tool.poetry]
+name = "modelsentry"
+version = "0.1.0"
+description = "Early warning when production ML models degrade"
+authors = ["Trey Hamilton <treydavid32@gmail.com>"]
+license = "MIT"
+readme = "README.md"
+packages = [{ include = "modelsentry" }]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+numpy = "*"
+pandas = "*"
+scipy = "*"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "*"
+pytest-cov = "*"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
