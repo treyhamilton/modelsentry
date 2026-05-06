@@ -1,0 +1,9 @@
+{
+  "model": "claude-sonnet-4-6",
+  "planMode": true,
+  "autoAccept": false,
+  "contextFiles": [
+    "CLAUDE.md",
+    "MODELSENTRY.md"
+  ]
+}
