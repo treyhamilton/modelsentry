@@ -12,6 +12,7 @@ import pytest
 
 from modelsentry.drift import FeatureDriftResult, detect_drift
 from modelsentry.profiler import profile
+import modelsentry.storage as storage_module
 from modelsentry.storage import (
     get_last_updated,
     get_prediction_count,
@@ -23,6 +24,7 @@ from modelsentry.storage import (
     save_baseline,
     save_drift_report,
     save_profile,
+    set_alert_callback,
 )
 
 
@@ -33,11 +35,10 @@ from modelsentry.storage import (
 
 @pytest.fixture
 def tmp_storage(tmp_path, monkeypatch):
-    """Patch STORAGE_ROOT to tmp_path for test isolation."""
-    import modelsentry.storage as storage_module
-
+    """Patch STORAGE_ROOT to tmp_path for test isolation and clear alert callback."""
     monkeypatch.setattr(storage_module, "STORAGE_ROOT", tmp_path)
-    return tmp_path
+    yield tmp_path
+    set_alert_callback(None)
 
 
 def make_profile(n_rows: int = 100, seed: int = 42) -> tuple:
@@ -565,3 +566,45 @@ def test_load_drift_reports_with_timestamps_returns_datetimes(tmp_storage):
 
     # Newest first
     assert entries[0][0] >= entries[1][0]
+
+
+# ---------------------------------------------------------------------------
+# Alert callback
+# ---------------------------------------------------------------------------
+
+
+def test_set_alert_callback_called_after_save(tmp_storage) -> None:
+    report, _, _ = make_drift_report()
+    calls: list[tuple] = []
+    set_alert_callback(lambda r, mid: calls.append((r, mid)))
+    save_drift_report(report, "m1")
+    assert len(calls) == 1
+    assert calls[0][1] == "m1"
+    assert calls[0][0].overall_severity == report.overall_severity
+
+
+def test_set_alert_callback_none_does_not_fire(tmp_storage) -> None:
+    report, _, _ = make_drift_report()
+    calls: list[tuple] = []
+    set_alert_callback(lambda r, mid: calls.append((r, mid)))
+    set_alert_callback(None)
+    save_drift_report(report, "m1")
+    assert calls == []
+
+
+def test_alert_callback_exception_does_not_block_save(tmp_storage) -> None:
+    report, _, _ = make_drift_report()
+
+    def bad_callback(r, mid):
+        raise RuntimeError("boom")
+
+    set_alert_callback(bad_callback)
+    path = save_drift_report(report, "m1")
+    assert path.exists()
+
+
+def test_alert_callback_isolation(tmp_storage) -> None:
+    """set_alert_callback(None) leaves no state for the next test."""
+    set_alert_callback(lambda r, mid: None)
+    set_alert_callback(None)
+    assert storage_module._alert_callback is None

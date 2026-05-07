@@ -21,6 +21,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from collections.abc import Callable
+
 from modelsentry.drift import DriftReport, FeatureDriftResult
 from modelsentry.profiler import (
     Distribution,
@@ -33,6 +35,7 @@ from modelsentry.profiler import (
 _log = logging.getLogger(__name__)
 
 STORAGE_ROOT: Path = Path.home() / ".modelsentry"
+_alert_callback: Callable[[DriftReport, str], None] | None = None
 _PROFILES_DIR = "profiles"
 _DRIFT_DIR = "drift_reports"
 _BASELINE_FILE = "baseline.json"
@@ -379,6 +382,11 @@ def save_drift_report(
     data = _drift_report_to_dict(report)
     data["detected_at"] = datetime.now(timezone.utc).isoformat()
     path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    if _alert_callback is not None:
+        try:
+            _alert_callback(report, model_id)
+        except Exception as exc:
+            _log.warning("Alert callback raised for model=%s: %s", model_id, exc)
     return path
 
 
@@ -511,6 +519,23 @@ def list_models() -> list[str]:
     if not STORAGE_ROOT.exists():
         return []
     return sorted(p.name for p in STORAGE_ROOT.iterdir() if p.is_dir())
+
+
+def set_alert_callback(
+    callback: Callable[[DriftReport, str], None] | None,
+) -> None:
+    """Register a function called after each drift report is saved.
+
+    Pass None to clear any previously registered callback.
+    The callback receives (report, model_id) after the file is written.
+    Exceptions raised by the callback are caught and logged — they will not
+    prevent the file from being saved or propagate to the caller.
+
+    Args:
+        callback: Function to call with (DriftReport, model_id), or None to clear.
+    """
+    global _alert_callback
+    _alert_callback = callback
 
 
 def get_last_updated(model_id: str) -> datetime | None:

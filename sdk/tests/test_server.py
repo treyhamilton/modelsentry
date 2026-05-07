@@ -439,3 +439,79 @@ def test_pydantic_nan_validator_directly():
     )
     assert m2.psi == 0.05
     assert math.isfinite(m2.psi)
+
+
+# ---------------------------------------------------------------------------
+# Alert callback integration
+# ---------------------------------------------------------------------------
+
+
+def test_create_app_with_alert_config_registers_callback(tmp_storage, dashboard_file):
+    """When create_app is given an AlertConfig, saving a drift report triggers the alert."""
+    from unittest.mock import patch
+    from modelsentry.alerts import AlertConfig
+
+    cfg = AlertConfig(
+        recipient_email="alex@example.com",
+        smtp_user="sender@example.com",
+        smtp_password="secret",
+    )
+    server.create_app(dashboard_path=dashboard_file, alert_config=cfg)
+
+    report, baseline, _ = _make_drift_report()
+    storage.save_baseline(baseline, "m1")
+
+    with patch("modelsentry.server.send_drift_alert") as mock_alert:
+        mock_alert.return_value = True
+        storage.save_drift_report(report, "m1")
+
+    mock_alert.assert_called_once()
+    call_report, call_model_id, call_cfg = mock_alert.call_args[0]
+    assert call_model_id == "m1"
+    assert call_cfg is cfg
+
+
+def test_create_app_no_alert_config_clears_callback(tmp_storage, dashboard_file):
+    """create_app() with no alert_config ensures the callback is None."""
+    import modelsentry.storage as storage_module
+    from modelsentry.alerts import AlertConfig
+
+    # First set a callback via an alert-aware app
+    cfg = AlertConfig(recipient_email="x@example.com")
+    server.create_app(dashboard_path=dashboard_file, alert_config=cfg)
+    assert storage_module._alert_callback is not None
+
+    # Creating a new app without config clears the callback
+    server.create_app(dashboard_path=dashboard_file)
+    assert storage_module._alert_callback is None
+
+
+def test_alert_callback_not_triggered_for_stable(tmp_storage, dashboard_file):
+    """send_drift_alert returns False for stable reports — callback fires but does not send."""
+    from unittest.mock import patch
+    from modelsentry.alerts import AlertConfig
+
+    cfg = AlertConfig(
+        recipient_email="alex@example.com",
+        smtp_user="sender@example.com",
+        smtp_password="secret",
+        min_severity="warning",
+    )
+    server.create_app(dashboard_path=dashboard_file, alert_config=cfg)
+
+    stable_report = _make_drift_report()[0]
+    # Override to stable for this test
+    from modelsentry.drift import DriftReport as DR
+    stable = DR(
+        schema_version=stable_report.schema_version,
+        overall_severity="stable",
+        feature_results=stable_report.feature_results,
+        missing_in_current=stable_report.missing_in_current,
+        missing_in_baseline=stable_report.missing_in_baseline,
+    )
+    storage.save_baseline(_make_profile(), "m1")
+
+    with patch("smtplib.SMTP") as mock_smtp_cls:
+        storage.save_drift_report(stable, "m1")
+
+    mock_smtp_cls.assert_not_called()
