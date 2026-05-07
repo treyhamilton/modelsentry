@@ -1,0 +1,12 @@
+[build]
+  publish = "landing"
+
+[[redirects]]
+  from = "/success"
+  to = "/success.html"
+  status = 200
+
+[[redirects]]
+  from = "/waitlist"
+  to = "/waitlist.html"
+  status = 200
