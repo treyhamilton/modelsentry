@@ -20,18 +20,39 @@ ask the human before assuming.
 
 ## CURRENT PROJECT STATUS
 
-**Phase:** Phase 1 — Local Dashboard Server (building beta-ready product)
-**POC:** COMPLETE — all 6 steps done, 55/55 tests passing as of May 2026
-**Next milestone:** Local dashboard server + email alert → recruit 5 beta users
+**Phase:** Phase 1 — COMPLETE. Beta outreach in progress as of May 2026.
+**POC:** COMPLETE — all 6 steps done, 55/55 tests passing
+**Phase 1:** COMPLETE — 148/148 tests passing. `pip install modelsentry` live on PyPI.
+**Next milestone:** 5 beta users actively using product on real models → gate for Phase 2
 
 ### What has been built (do not rebuild or redesign without explicit instruction)
 
 - `sdk/modelsentry/profiler.py` — 322 lines, statistical profile computation, 19 tests
 - `sdk/modelsentry/drift.py` — 287 lines, PSI + KS drift detection, 19 tests
 - `sdk/modelsentry/monitor.py` — 304 lines, @ms.monitor() decorator, 17 tests
+- `sdk/modelsentry/storage.py` — local JSON profile persistence (~/.modelsentry/)
+- `sdk/modelsentry/server.py` — FastAPI dashboard server, localhost:8080
+- `sdk/modelsentry/alerts.py` — SMTP email alert module (AlertConfig + send_drift_alert)
+- `sdk/modelsentry/cli.py` — `modelsentry serve` CLI with email alert flags
 - `sdk/modelsentry/__init__.py` — clean public API, version 0.1.0
-- `sdk/pyproject.toml` — Poetry config, Python 3.11, numpy/pandas/scipy/pytest/scikit-learn
+- `sdk/pyproject.toml` — Poetry config, Python 3.11, all Phase 1 deps
+- `dashboard/index.html` — single-page dashboard, 7 requirements met
+- `landing/index.html` — landing page live at getmodelsentry.com
 - `notebooks/poc_validation.ipynb` — 17-cell validation notebook, all 3 assumptions PASS
+
+### CLI interface (current — as shipped)
+
+```bash
+modelsentry serve \
+  --model churn-v3 \
+  --alert-email you@company.com \
+  --smtp-host smtp.gmail.com \
+  --smtp-port 587 \
+  --smtp-user you@gmail.com \
+  --smtp-password "app-password"
+```
+
+`--alert-email` is optional. `--smtp-host` defaults to `smtp.gmail.com`, `--smtp-port` to `587`.
 
 ### POC validation results (confirmed working on synthetic data)
 
@@ -263,13 +284,16 @@ shows you a local dashboard of model health in real time. Looking for 5 data
 scientists to try it on real models and tell me what is broken. Free forever
 for beta users."
 
-### Beta readiness checklist (must be complete before outreach)
+### Beta readiness checklist
 
-- [ ] Local dashboard server running and showing continuous monitoring state
-- [ ] Email alert working on drift detection
-- [ ] modelsentry.com domain registered with landing page + waitlist signup
-- [ ] Full flow demoed end-to-end in under 10 minutes on a real model
-- [ ] README with clear install and quickstart instructions
+- [x] Local dashboard server running and showing continuous monitoring state
+- [x] Email alert working on drift detection
+- [x] getmodelsentry.com live with landing page + waitlist signup
+- [x] Full flow demoed end-to-end in under 10 minutes on a real model
+- [x] README with clear install and quickstart instructions
+- [x] Published to PyPI — `pip install modelsentry` works
+
+**Status: outreach in progress as of 2026-05-07.**
 
 ### Legal formation (intentionally deferred)
 
@@ -395,13 +419,14 @@ explicit instruction — they are acceptable for beta.
 | Feature | Status |
 |---|---|
 | Python SDK with @ms.monitor() | ✅ DONE |
-| Local profile storage (~/.modelsentry/) | ⬜ TODO |
-| FastAPI local server with profile endpoints | ⬜ TODO |
-| HTML/JS dashboard with continuous monitoring display | ⬜ TODO |
-| `modelsentry serve` CLI command | ⬜ TODO |
-| Email alert on drift threshold breach | ⬜ TODO |
-| Full integration test (install → monitor → dashboard → alert) | ⬜ TODO |
-| Landing page at modelsentry.com with waitlist | ⬜ TODO |
+| Local profile storage (~/.modelsentry/) | ✅ DONE |
+| FastAPI local server with profile endpoints | ✅ DONE |
+| HTML/JS dashboard with continuous monitoring display | ✅ DONE |
+| `modelsentry serve` CLI command | ✅ DONE |
+| Email alert on drift threshold breach | ✅ DONE |
+| Full integration test (install → monitor → dashboard → alert) | ✅ DONE |
+| Landing page at getmodelsentry.com with waitlist | ✅ DONE |
+| Published to PyPI (`pip install modelsentry` works) | ✅ DONE — v0.1.0 |
 
 ### P1 — After beta validates core (do not build yet)
 
@@ -549,17 +574,11 @@ Stack: FastAPI + static HTML/JS + JSON files in ~/.modelsentry/
 ### Phase 0 — POC ✅ COMPLETE (May 2026)
 55/55 tests. Validation notebook. All 3 assumptions proven.
 
-### Phase 1 — Local Dashboard Server (CURRENT)
-Build order:
-- [ ] Step 1: Local profile storage layer (JSON files in ~/.modelsentry/)
-- [ ] Step 2: FastAPI server with profile reading + drift endpoints
-- [ ] Step 3: HTML/JS dashboard (continuous monitoring, proof of life)
-- [ ] Step 4: `modelsentry serve` CLI entry point
-- [ ] Step 5: Email alert on drift threshold
-- [ ] Step 6: Integration test (full flow)
-- [ ] Step 7: Landing page at modelsentry.com
+### Phase 1 — Local Dashboard Server ✅ COMPLETE (May 2026)
+148/148 tests. `pip install modelsentry` live. getmodelsentry.com live.
+All 7 build steps done. Beta outreach in progress.
 
-Gate: 5 beta users recruited and actively using → Phase 2
+Gate: 5 beta users actively using on real models → Phase 2
 
 ### Phase 2 — Cloud Platform
 After beta validates local product:
@@ -626,5 +645,5 @@ State the current Phase 1 build step and wait for instruction.
 
 ---
 
-*MODELSENTRY.md v2.0 — Updated post-POC, May 2026.*
+*MODELSENTRY.md v2.1 — Updated post-Phase-1-completion, May 2026.*
 *This file is the source of truth. An outdated file means Claude Code builds the wrong thing.*
