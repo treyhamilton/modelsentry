@@ -295,6 +295,24 @@ def test_drift_endpoint_404_when_no_data(client):
     assert resp.status_code == 404
 
 
+def test_drift_endpoint_includes_detected_at(client):
+    """Each drift report in the /drift response includes a detected_at ISO timestamp."""
+    report, baseline, _current = _make_drift_report()
+    storage.save_baseline(baseline, "m1")
+    storage.save_drift_report(report, "m1", timestamp="2026-05-06T11-00-00")
+
+    resp = client.get("/api/models/m1/drift")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert len(body) == 1
+    assert "detected_at" in body[0]
+    assert body[0]["detected_at"] is not None
+    # Must be parseable as an ISO datetime
+    from datetime import datetime
+    parsed = datetime.fromisoformat(body[0]["detected_at"])
+    assert parsed.tzinfo is not None
+
+
 # ---------------------------------------------------------------------------
 # /api/models/{id}/features
 # ---------------------------------------------------------------------------

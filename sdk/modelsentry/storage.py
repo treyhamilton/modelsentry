@@ -376,7 +376,9 @@ def save_drift_report(
     """
     _ensure_dirs(model_id)
     path = _model_dir(model_id) / _DRIFT_DIR / _to_filename(timestamp)
-    path.write_text(json.dumps(_drift_report_to_dict(report), indent=2), encoding="utf-8")
+    data = _drift_report_to_dict(report)
+    data["detected_at"] = datetime.now(timezone.utc).isoformat()
+    path.write_text(json.dumps(data, indent=2), encoding="utf-8")
     return path
 
 
@@ -409,6 +411,52 @@ def load_drift_reports(
             continue
         try:
             results.append(_dict_to_drift_report(raw))
+        except (KeyError, TypeError, ValueError) as exc:
+            _log.warning("Skipping malformed drift report at %s: %s", path, exc)
+    return results
+
+
+def load_drift_reports_with_timestamps(
+    model_id: str,
+    limit: int | None = None,
+) -> list[tuple[datetime, DriftReport]]:
+    """Load recent drift reports paired with their detection timestamps, newest first.
+
+    ``detected_at`` is read from the ``detected_at`` field embedded in the JSON
+    at save time. Falls back to file mtime for reports saved before that field
+    was introduced.
+
+    Corrupted or unreadable files are skipped with a warning.
+
+    Args:
+        model_id: Identifier for the model.
+        limit: Maximum number of entries to return. None returns all.
+
+    Returns:
+        List of ``(detected_at, DriftReport)`` tuples sorted newest-first.
+    """
+    drift_dir = _model_dir(model_id) / _DRIFT_DIR
+    if not drift_dir.exists():
+        return []
+
+    paths = sorted(drift_dir.glob("*.json"), reverse=True)
+    results: list[tuple[datetime, DriftReport]] = []
+    for path in paths:
+        if limit is not None and len(results) >= limit:
+            break
+        raw = _load_json_file(path, "drift report")
+        if raw is None:
+            continue
+        try:
+            report = _dict_to_drift_report(raw)
+            detected_at_str: str | None = raw.get("detected_at")
+            if detected_at_str:
+                detected_at = datetime.fromisoformat(detected_at_str)
+            else:
+                detected_at = datetime.fromtimestamp(
+                    path.stat().st_mtime, tz=timezone.utc
+                )
+            results.append((detected_at, report))
         except (KeyError, TypeError, ValueError) as exc:
             _log.warning("Skipping malformed drift report at %s: %s", path, exc)
     return results
