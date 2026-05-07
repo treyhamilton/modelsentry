@@ -9,7 +9,9 @@ from click.testing import CliRunner
 
 from modelsentry import __version__
 from modelsentry.cli import cli
-from modelsentry.server import HOST, DEFAULT_PORT, app as server_app
+from fastapi import FastAPI
+
+from modelsentry.server import HOST, DEFAULT_PORT
 
 
 # ---------------------------------------------------------------------------
@@ -125,7 +127,7 @@ def test_serve_app_passed_to_uvicorn(runner: CliRunner) -> None:
     assert result.exit_code == 0
     mock_uv.assert_called_once()
     first_positional = mock_uv.call_args[0][0]
-    assert first_positional is server_app
+    assert isinstance(first_positional, FastAPI)
 
 
 def test_help_exits_zero(runner: CliRunner) -> None:

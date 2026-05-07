@@ -556,8 +556,9 @@ ms.<span class="fn">init</span>(model_id=<span class="str">"churn-v3"</span>,
         <div class="step-number">Step 3</div>
         <h3>Open the dashboard</h3>
         <div class="code-block">modelsentry serve \
-  --model churn-v3</div>
-        <p class="step-caption">Opens localhost:8080. PSI and KS drift scores update as predictions roll in. You get an email the moment drift crosses your threshold.</p>
+  --model churn-v3 \
+  --alert-email you@company.com</div>
+        <p class="step-caption">Opens localhost:8080. PSI and KS drift scores update as predictions roll in. Pass <code>--alert-email</code> to get notified the moment drift crosses your threshold.</p>
       </div>
 
     </div>
