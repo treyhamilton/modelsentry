@@ -1,28 +1,70 @@
 # MODELSENTRY.md
 # Project Memory File — Read this before making ANY architectural or product decision.
-# Last updated: May 2026 | Version: 1.0
+# Last updated: May 2026 | Version: 2.0
+# IMPORTANT: This file was significantly updated after POC completion. Version 1.0 is obsolete.
 
 ---
 
 ## WHAT THIS FILE IS
 
-This file is the single source of truth for ModelSentry. Every major product, architectural, pricing, and scope decision is recorded here. When working with Claude Code or any AI tool, paste this file into context first. It exists to prevent decisions that contradict what has already been decided.
+This file is the single source of truth for ModelSentry. Every major product,
+architectural, pricing, and scope decision is recorded here. When working with
+Claude Code or any AI tool, paste this file into context first. It exists to
+prevent decisions that contradict what has already been decided.
 
-If you are about to make a decision that conflicts with something in this file, stop and flag it rather than proceeding.
+If you are about to make a decision that conflicts with something in this file,
+stop and flag it rather than proceeding. If MODELSENTRY.md does not cover it,
+ask the human before assuming.
+
+---
+
+## CURRENT PROJECT STATUS
+
+**Phase:** Phase 1 — Local Dashboard Server (building beta-ready product)
+**POC:** COMPLETE — all 6 steps done, 55/55 tests passing as of May 2026
+**Next milestone:** Local dashboard server + email alert → recruit 5 beta users
+
+### What has been built (do not rebuild or redesign without explicit instruction)
+
+- `sdk/modelsentry/profiler.py` — 322 lines, statistical profile computation, 19 tests
+- `sdk/modelsentry/drift.py` — 287 lines, PSI + KS drift detection, 19 tests
+- `sdk/modelsentry/monitor.py` — 304 lines, @ms.monitor() decorator, 17 tests
+- `sdk/modelsentry/__init__.py` — clean public API, version 0.1.0
+- `sdk/pyproject.toml` — Poetry config, Python 3.11, numpy/pandas/scipy/pytest/scikit-learn
+- `notebooks/poc_validation.ipynb` — 17-cell validation notebook, all 3 assumptions PASS
+
+### POC validation results (confirmed working on synthetic data)
+
+- Assumption 1 PASS: Local statistical profiling works
+- Assumption 2 PASS: Framework-agnostic @ms.monitor() works on any Python function
+- Assumption 3 PASS: Deliberately introduced drift is detectable
+  - age feature (+15yr mean shift): PSI=2.43, severity=critical, KS p=0.0000
+  - income feature (shifted distribution): PSI=0.83, severity=critical
+  - tenure/country/tier (unchanged): PSI<0.03, severity=stable
+- SDK overhead: 0.6μs per call — 8,000× under the 5ms budget
 
 ---
 
 ## NORTH STAR
 
-> "ModelSentry gives data teams early warning when their production ML models start degrading — so they can fix problems before they impact the business."
+> "ModelSentry gives data teams early warning when their production ML models
+> start degrading — so they can fix problems before they impact the business."
 
-**North star metric:** Number of models actively monitored in production across all customer workspaces.
+**North star metric:** Number of models actively monitored in production.
 
 ---
 
 ## THE PROBLEM WE SOLVE
 
-Alex's team spent three months building a churn prediction model. It went to production, stakeholders loved it, and everyone moved on. Eight weeks later, the product team shipped a new onboarding flow that changed three key behavioral features. Nobody told the data team. The model kept scoring customers — confidently, silently, wrongly. A month later, CS noticed churn spiking in segments the model flagged as low risk. Alex spent a week tracing the failure back to a feature distribution shift that happened 45 days prior. Six weeks of bad predictions. Decisions made on corrupted scores. Trust in the model — and the team — damaged.
+Alex's team spent three months building a churn prediction model. It went to
+production, stakeholders loved it, and everyone moved on. Eight weeks later,
+the product team shipped a new onboarding flow that changed three key behavioral
+features. Nobody told the data team. The model kept scoring customers —
+confidently, silently, wrongly. A month later, CS noticed churn spiking in
+segments the model flagged as low risk. Alex spent a week tracing the failure
+back to a feature distribution shift that happened 45 days prior. Six weeks of
+bad predictions. Decisions made on corrupted scores. Trust in the model — and
+the team — damaged.
 
 **ModelSentry would have caught it on day one.**
 
@@ -46,7 +88,8 @@ Three core failure modes we detect:
 **Language:** Python
 **Stack:** Predominantly AWS, scikit-learn, XGBoost, some PyTorch
 
-**Economic buyer:** Head of Data / ML Lead — holds team budget, gets blamed when models fail, approves Growth tier purchases.
+**Economic buyer:** Head of Data / ML Lead — holds team budget, gets blamed
+when models fail, approves Growth tier purchases.
 
 ---
 
@@ -66,6 +109,7 @@ Three core failure modes we detect:
 - An end-to-end MLOps platform
 - An enterprise-only product
 - A raw data storage or processing service
+- A cloud-hosted dashboard yet (Phase 1 is intentionally local-first)
 
 ---
 
@@ -73,169 +117,373 @@ Three core failure modes we detect:
 
 ### PRINCIPLE 1 — RAW DATA NEVER LEAVES CUSTOMER INFRASTRUCTURE
 
-This is non-negotiable. It is both an architectural decision and our primary sales differentiator.
+This is non-negotiable. It is both an architectural decision and our primary
+sales differentiator.
 
-The SDK computes statistical profiles (distributions, PSI scores, KS statistics, null rates, cardinality) locally within the customer's environment. Only compact, anonymized statistical summaries are transmitted to ModelSentry cloud. ModelSentry never stores, sees, or processes customer raw prediction data or input features.
+The SDK computes statistical profiles locally. Only anonymized statistical
+summaries are ever stored or transmitted. ModelSentry never stores, sees, or
+processes customer raw prediction data or input features.
 
-**Practical implementation:**
+**Phase 1 (local dashboard):**
+```
+Customer machine:
+  Raw prediction data
+    → SDK computes statistical profiles locally (profiler.py)
+    → Profiles stored in ~/.modelsentry/{model_id}/ as JSON
+    → Local dashboard server reads profiles and renders them
+    → Raw data never transmitted, never written to disk
+```
+
+**Phase 2 (cloud):**
 ```
 Customer environment:
   Raw prediction data
-    → SDK computes statistical profiles locally
+    → SDK computes profiles locally
     → Transmits ONLY summaries via encrypted HTTPS
-    
-ModelSentry cloud:
-  Receives statistical profiles only
-  Runs drift detection against stored baselines
-  Serves dashboard and alerts
-  NEVER receives raw data
+    → Cloud stores profiles, serves dashboard, sends alerts
+    → Raw data NEVER transmitted
 ```
 
-**Why this matters for sales:** When Alex's Head of Data asks "what data does this send externally?" the answer is "only statistical summaries — your raw data never leaves your environment." This closes the security objection instantly.
+**Sales impact:** "Nothing leaves your machine" is the strongest possible
+privacy story. It eliminates the #1 enterprise security objection before it
+is even raised.
 
 ### PRINCIPLE 2 — FRAMEWORK AGNOSTIC
 
-The SDK intercepts at the data boundary (inputs and outputs of the predict function), not at model internals. This means it works with any framework — scikit-learn, XGBoost, LightGBM, PyTorch, TensorFlow, or any custom NumPy implementation — without requiring framework-specific integration code.
+SDK intercepts at the data boundary (inputs/outputs of predict function), not
+model internals. Works with any framework. Verified in POC.
 
 ### PRINCIPLE 3 — ZERO-CONFIG BASELINE
 
-ModelSentry automatically establishes a statistical baseline from the first N days of production traffic. No manual configuration of baselines is required. This is a P0 feature — if Alex has to manually configure baselines, we've broken the "just works" promise.
+ModelSentry automatically establishes a statistical baseline from the first N
+predictions observed. No manual configuration required.
 
-### PRINCIPLE 4 — SIMPLICITY OVER FEATURES
+### PRINCIPLE 4 — PROOF OF LIFE (CRITICAL UX REQUIREMENT)
 
-Every feature must answer: "Does this serve Alex's ability to know her model is breaking before her boss does?" If not, it doesn't belong in the MVP. Scope creep is the primary risk to shipping.
+**Added in Version 2.0. This is non-negotiable.**
+
+A dashboard that only shows content when drift is detected has a fatal UX flaw:
+users cannot tell if the tool is working or broken during normal operation.
+
+The dashboard MUST always show:
+- How many predictions have been monitored since install
+- When the last profile was computed (timestamp proves the system is alive)
+- Current feature distributions vs. baseline — even when all stable
+- Per-feature drift scores with green/yellow/red indicators
+- An intentional "all clear" state — not an empty page
+
+**A silent dashboard = users assume it is broken = uninstall.**
+
+### PRINCIPLE 5 — SIMPLICITY OVER FEATURES
+
+Every feature must answer: "Does this serve Alex's ability to know her model is
+breaking before her boss does?" If not, it does not belong in the MVP.
 
 ---
 
-## SDK DESIGN
+## PHASE 1 BUILD — LOCAL DASHBOARD SERVER
 
-**Language:** Python only at launch. REST API in v1.1 to cover all other languages.
+### What we are building
 
-**Target integration time:** Under 10 minutes from `pip install` to first profile transmitted.
+A lightweight local web server Alex runs alongside her model. It reads profiles
+computed by the SDK, detects drift, and serves a visual dashboard at
+localhost:8080. No cloud, no account, no data leaving her machine.
 
-**Intended usage pattern:**
+### CLI interface
+
+```bash
+modelsentry serve --model churn-v3 --port 8080
+```
+
+Alex opens `http://localhost:8080` and sees her model's health.
+
+### Dashboard requirements (must all be present)
+
+1. **Model health overview** — green/yellow/red status per model
+2. **Prediction volume** — total predictions monitored, count in last window
+3. **Per-feature distributions** — current vs. baseline charts/histograms
+4. **Drift scores** — PSI and KS per feature, color-coded by severity
+5. **Last updated timestamp** — must update regularly to prove system is alive
+6. **Alert history** — recent drift events with timestamps and severity
+7. **"All systems nominal" state** — explicitly shown when no drift detected
+
+### Dashboard technology
+
+- **Backend:** FastAPI serving JSON API endpoints
+- **Frontend:** Single-page HTML/JS — no React build toolchain for Phase 1
+- **Auto-refresh:** Every 60 seconds (configurable)
+- **Process:** Runs as background process alongside customer's model
+- **Binding:** localhost only — never 0.0.0.0
+
+### Profile storage
+
+```
+~/.modelsentry/
+  {model_id}/
+    baseline.json           ← baseline profile (first N predictions)
+    profiles/               ← rolling window of recent profiles
+      2026-05-06T14:00.json
+      2026-05-06T15:00.json
+    drift_reports/          ← computed drift reports
+      2026-05-06T15:00.json
+```
+
+No database. JSON files. Persists across server restarts.
+
+### Email alert
+
+- Sends when drift crosses threshold
+- SMTP or SendGrid (decide during build — ask human)
+- Configurable: recipient, threshold, model_id
+- Sends directly from customer's machine — no cloud backend needed
+- One email per drift event
+
+### Why local-first for Phase 1
+
+1. Zero cloud infrastructure cost or complexity during beta
+2. Zero signup friction — install pip, run command, open browser
+3. Strongest privacy story — "nothing leaves your machine"
+4. Faster to build — no auth, no database, no deployment pipeline
+5. Beta feedback tells us what the cloud dashboard needs before we build it
+
+---
+
+## GO-TO-MARKET — BETA PROGRAM
+
+### Decision: Beta users over discovery interviews
+
+Rather than pure discovery interviews, we recruit 5 beta users who actually
+install and use the product. Beta users provide richer signal — they find real
+bugs, real edge cases, real workflow friction that no interview reveals.
+
+### Beta pitch
+
+"I built something. Install it with pip. It monitors your production models and
+shows you a local dashboard of model health in real time. Looking for 5 data
+scientists to try it on real models and tell me what is broken. Free forever
+for beta users."
+
+### Beta readiness checklist (must be complete before outreach)
+
+- [ ] Local dashboard server running and showing continuous monitoring state
+- [ ] Email alert working on drift detection
+- [ ] modelsentry.com domain registered with landing page + waitlist signup
+- [ ] Full flow demoed end-to-end in under 10 minutes on a real model
+- [ ] README with clear install and quickstart instructions
+
+### Legal formation (intentionally deferred)
+
+Decision: LLC and trademark filing are deferred until beta validates the idea.
+**Only exception: register modelsentry.com domain immediately (~$15).**
+
+File LLC and trademark when:
+- At least 3 beta users are actively using the product on real models
+- At least 1 says "I would pay for this"
+
+---
+
+## SDK PUBLIC API — CURRENT STATE
+
+### profiler.py
+
+```python
+from modelsentry.profiler import profile, compute_psi
+from modelsentry.profiler import Profile, FeatureProfile, Distribution
+from modelsentry.profiler import NumericStats, PredictionProfile
+
+prof: Profile = profile(
+    features: pd.DataFrame,
+    predictions: np.ndarray,
+    *,
+    n_bins: int = 10,
+    top_n_categories: int = 50,
+    baseline_edges: dict[str, tuple[float, ...]] | None = None,
+) -> Profile
+
+psi: float = compute_psi(
+    expected_counts: np.ndarray,
+    actual_counts: np.ndarray,
+    epsilon: float = 1e-4,
+) -> float
+```
+
+### drift.py
+
+```python
+from modelsentry.drift import detect_drift
+from modelsentry.drift import DriftReport, FeatureDriftResult
+
+report: DriftReport = detect_drift(
+    baseline: Profile,
+    current: Profile,
+    *,
+    psi_warning: float = 0.1,
+    psi_critical: float = 0.25,
+    ks_alpha: float = 0.05,
+) -> DriftReport
+
+# DriftReport fields:
+# .schema_version: str ("1.0")
+# .overall_severity: Literal["stable", "warning", "critical"]
+# .feature_results: dict[str, FeatureDriftResult]
+# .missing_in_current: tuple[str, ...]
+# .missing_in_baseline: tuple[str, ...]
+
+# FeatureDriftResult fields:
+# .name: str
+# .dtype: Literal["numeric", "categorical"]
+# .severity: Literal["stable", "warning", "critical"]
+# .psi: float
+# .ks_statistic: float | None (numeric only)
+# .ks_p_value: float | None (numeric only)
+# .notes: tuple[str, ...]
+```
+
+### monitor.py
+
 ```python
 import modelsentry as ms
 
-ms.init(api_key="your-key", model_id="churn-v3")
+ms.init(
+    api_key: str,           # stored, not transmitted in Phase 1
+    model_id: str,
+    profile_window: int = 100,
+    profile_handler: Callable | None = None,
+    logger: logging.Logger | None = None,
+)
 
-@ms.monitor()
-def predict(features):
-    return model.predict(features)  # works with ANY framework
+@ms.monitor(model_id: str | None = None)
+def predict(features): ...
+
+# Operational helpers (import directly):
+from modelsentry.monitor import flush, shutdown, get_latest_profile
 ```
 
-Alternative for teams that can't use decorators:
+### Package surface
+
 ```python
-ms.log(model_id="churn-v3", features=X, predictions=y_pred)
+import modelsentry as ms
+# Exports: ms.init, ms.monitor, ms.Profile, ms.DriftReport, ms.__version__
 ```
 
-**What the SDK must NOT do:**
-- Transmit raw feature values
-- Transmit raw predictions
-- Add more than 5ms latency to prediction calls
-- Require changes to model training code
-- Require knowledge of which framework was used
+---
+
+## KNOWN TECHNICAL DEBT
+
+These are known issues to fix in Phase 2. Do not fix in Phase 1 without
+explicit instruction — they are acceptable for beta.
+
+1. **Mutable dicts in frozen dataclasses:** `feature_profiles`, `value_counts`,
+   `class_counts` are dicts inside frozen dataclasses. `frozen=True` blocks
+   field reassignment but not `.update()`. Fix with `MappingProxyType` in Phase 2.
+
+2. **KS test uses histogram reconstruction:** drift.py reconstructs synthetic
+   samples from bin midpoints (Option A, approximate at ~10% per bin width)
+   rather than computing the statistic directly from empirical CDFs (Option B,
+   exact). Acceptable for Phase 1. Upgrade in Phase 2.
+
+3. **Integer predictions treated as regression:** Low-cardinality integer class
+   IDs (0/1) are profiled as regression. String labels work correctly as
+   classification. Flagged in profiler.py docstring. Fix in Phase 2.
 
 ---
 
 ## FEATURE PRIORITY TIERS
 
-### P0 — Launch blockers (all 6 must ship before GA)
+### Phase 1 P0 — Must ship for beta (in build order)
 
-| Feature | Key requirement |
+| Feature | Status |
 |---|---|
-| Feature drift detection | PSI + KS test. No labels required. Fires alert when drift score exceeds threshold. |
-| Performance degradation alerts | Tracks accuracy, F1, AUC, RMSE. Supports classification and regression. |
-| Python SDK | pip installable. One decorator instruments any model. Raw data stays local. |
-| Monitoring dashboard | Shows health, drift scores, alert history across all models. Loads < 3 seconds. |
-| Baseline auto-detection | Automatically built from first N days. Zero manual config. |
-| Multi-model support | 3–8 models per workspace from a single dashboard. |
+| Python SDK with @ms.monitor() | ✅ DONE |
+| Local profile storage (~/.modelsentry/) | ⬜ TODO |
+| FastAPI local server with profile endpoints | ⬜ TODO |
+| HTML/JS dashboard with continuous monitoring display | ⬜ TODO |
+| `modelsentry serve` CLI command | ⬜ TODO |
+| Email alert on drift threshold breach | ⬜ TODO |
+| Full integration test (install → monitor → dashboard → alert) | ⬜ TODO |
+| Landing page at modelsentry.com with waitlist | ⬜ TODO |
 
-### P1 — Should have (build after P0 is stable, before GA if possible)
+### P1 — After beta validates core (do not build yet)
 
 | Feature | Notes |
 |---|---|
-| Slack alerting | Include model name, drift score, affected features, dashboard link |
-| Email alerting | Configurable per model per user |
-| Data volume monitoring | Alert on unexpected spikes/drops vs. baseline |
-| Model versioning | Track performance across versions, compare after retraining |
+| Cloud-hosted dashboard | After beta confirms local dashboard works |
+| Slack alerting | Include model name, drift score, dashboard link |
 | Custom alert thresholds | Per-model sensitivity controls |
-| Retraining recommendations | AI-generated suggestions based on drift severity and trend |
-| Team collaboration | Multi-user workspace access, not full incident management |
+| Data volume monitoring | Alert on unexpected prediction volume changes |
+| Model versioning | Compare performance across model versions |
+| Retraining recommendations | AI-generated suggestions on when to retrain |
+| Team collaboration | Multi-user workspace access |
+| Baseline auto-detection from rolling window | Currently requires explicit call |
 
-### P2 — Strategic roadmap (do NOT build until paying customers request it)
+### P2 — After paying customers (do not build yet)
 
 | Feature | Why deferred |
 |---|---|
-| LLM / generative AI monitoring | Different architecture entirely. Separate market. v2. |
-| REST API | Build when customers outgrow the dashboard. v1.1. |
+| LLM / generative AI monitoring | Different architecture. Separate market. v2. |
+| REST API | When customers outgrow local dashboard |
 | SSO / SAML | Enterprise tier only. After SOC 2. |
-| On-premise deployment | Defer until a customer explicitly pays for it. |
-| R language SDK | Academic market only. REST API covers this. |
+| On-premise deployment | Defer until customer explicitly pays for it |
+| R language SDK | REST API covers this when built |
+| SOC 2 Type I | Target month 12 |
 
 ---
 
 ## PRICING
 
-### Model
 Per workspace, tiered by number of models monitored.
-Primary dimension: models monitored (not seats, not usage volume).
 
-### Tiers
-
-| Tier | Price | Models | Purpose |
+| Tier | Price | Models | Key features |
 |---|---|---|---|
-| Starter | Free | 1 | Zero-friction trial. No credit card. 7-day data retention. |
-| Pro | $99/month | 3 | Individual Alex. Expensable without approval. 90-day retention. |
-| Growth | $299/month | 10 | Team purchase. Head of Data approves. 1-year retention. 5 users. |
-| Enterprise | Custom | Unlimited | SSO, SOC 2, REST API, dedicated support. Procurement-grade. |
+| Starter | Free | 1 | Local dashboard, 7-day retention, no credit card |
+| Pro | $99/month | 3 | Email alerts, 90-day retention |
+| Growth | $299/month | 10 | Slack + email, custom thresholds, 5 users, 1yr retention |
+| Enterprise | Custom | Unlimited | SSO, SOC 2, REST API, dedicated support |
 
-### What's included at each tier
-- **Starter:** Dashboard, baseline auto-detection, drift detection, 7-day retention
-- **Pro:** Everything in Starter + email alerting, 90-day retention, 3 models
-- **Growth:** Everything in Pro + Slack alerting, custom thresholds, team access (5 users), 1-year retention
-- **Enterprise:** Everything in Growth + SSO, SOC 2 documentation, REST API, dedicated support, custom retention
+**Note:** Pricing applies to the future cloud product. All beta users get Pro
+features free forever regardless of tier.
 
 ---
 
 ## INFRASTRUCTURE
 
-### Cloud provider
-**AWS primary.** Reasons: Alex's existing infrastructure is predominantly AWS. Largest partner ecosystem. AWS Marketplace is a viable future sales channel.
+### Phase 1 — No cloud infrastructure
 
-**Apply to AWS Activate Founders program immediately** — provides $5,000–$100,000 in free credits depending on track.
+Local dashboard server runs on customer's machine. No AWS required.
+Stack: FastAPI + static HTML/JS + JSON files in ~/.modelsentry/
 
-### Architecture requirements
-- **Containerized from day one** — Docker + ECS or Kubernetes. Enables future cloud portability without rewriting.
-- **Use standard managed services** — PostgreSQL on RDS (not Aurora-specific features), standard S3-compatible storage. Avoid vendor lock-in at the service level.
-- **Cloud agnostic abstractions** — wrap AWS-specific services behind interface layers so switching clouds is a configuration change, not a rewrite.
+### Phase 2 — AWS primary, containerized
 
-### Key AWS services
-- **Compute:** ECS Fargate or EC2 (start small, autoscale)
-- **Database:** RDS PostgreSQL — stores profiles, drift scores, alerts, users, workspace config
-- **Storage:** S3 — statistical profile archive, dashboard assets
-- **Queue:** SQS — decouples profile ingestion from drift detection processing
-- **CDN:** CloudFront — dashboard delivery
+- Compute: ECS Fargate (not EC2 bare metal)
+- Database: RDS PostgreSQL (not Aurora-specific features)
+- Storage: S3 (standard, not S3-specific lock-in features)
+- Queue: SQS (decouple ingestion from detection)
+- CDN: CloudFront
+- Apply to AWS Activate Founders before Phase 2: aws.amazon.com/activate
+- Containerized from day one: Docker + ECS, cloud agnostic abstractions
 
 ---
 
 ## SECURITY
 
-### Launch baseline (all required before first paying customer)
-- TLS/HTTPS everywhere — all API endpoints, all dashboard traffic
-- Data encrypted at rest — RDS encryption enabled, S3 server-side encryption
-- MFA required — enforced for all user accounts
-- Tenant isolation — each customer's data is strictly siloed at the database level
-- Basic audit logs — who logged in, when, what changed
-- Secure password requirements — minimum length, complexity, bcrypt hashing
+### Phase 1 (local — minimal surface area)
+- No network transmission at all in Phase 1
+- Profiles stored locally — user controls their own data
+- Dashboard binds to localhost only — never 0.0.0.0
+- No authentication needed for local-only access
 
-### Deferred (do not build for MVP)
-- SSO / SAML — Enterprise tier only
-- SOC 2 Type I — Target month 12, use Vanta or Drata for automation
-- SOC 2 Type II — Target month 18
+### Phase 2 (cloud — required before first paying customer)
+- TLS/HTTPS everywhere
+- Encryption at rest (RDS + S3)
+- MFA required for all accounts
+- Tenant data isolation at database query level
+- Basic audit logs
+- Bcrypt password hashing
 
-### The privacy advantage
-Because raw data never leaves customer infrastructure, ModelSentry's compliance surface area is dramatically smaller than tools that store raw prediction data. We never handle customer PII, PHI, or raw feature data. This simplifies our SOC 2 scope and eliminates HIPAA exposure for the MVP.
+### Deferred
+- SSO/SAML: Enterprise tier only
+- SOC 2 Type I: Month 12
+- SOC 2 Type II: Month 18
 
 ---
 
@@ -243,12 +491,14 @@ Because raw data never leaves customer infrastructure, ModelSentry's compliance 
 
 | Requirement | Target | Notes |
 |---|---|---|
-| Availability | 99.5% uptime | ~43 hours downtime/year acceptable at early stage |
-| Dashboard load time | < 3 seconds | Instrument from day one with real monitoring |
-| SDK latency overhead | < 5ms | Profile computation must not slow down prediction calls |
-| SDK data transmission | Async, non-blocking | Never block the predict() call waiting for transmission |
-| Localization | English + timezone auto-detect | US market MVP. Timezone prevents alert timestamp confusion. |
-| Framework support | Framework agnostic | Intercept at data boundary, not model internals |
+| SDK latency overhead | < 5ms | Currently 0.6μs — maintain this |
+| SDK data transmission | Async, non-blocking | Never block predict() |
+| Dashboard load time | < 3 seconds | Local server should be near-instant |
+| Dashboard refresh | Every 60 seconds (configurable) | Proof of life |
+| Server startup | < 5 seconds | `modelsentry serve` must start fast |
+| Local server binding | localhost only | Never 0.0.0.0 |
+| Availability (Phase 2) | 99.5% uptime | ~43 hrs/year |
+| Localization | English + timezone auto-detect | US market MVP |
 
 ---
 
@@ -256,33 +506,37 @@ Because raw data never leaves customer infrastructure, ModelSentry's compliance 
 
 | Competitor | Price | Gap ModelSentry fills |
 |---|---|---|
-| Evidently / NannyML | Free (open source) | No hosted dashboard, no alerting, requires self-hosting expertise |
-| WhyLabs | $0–$500/mo | Limited features, complex setup for small teams |
+| Evidently / NannyML | Free (OSS) | No dashboard, no alerting, requires self-hosting expertise |
+| WhyLabs | $0–$500/mo | Complex cloud setup, limited features |
 | Arize AI | $500–$1,000+/mo | Too expensive for 50–200 person SaaS teams |
 | Fiddler AI | $1,500–$2,500+/mo | Enterprise-only, massively over-engineered |
 | **ModelSentry** | **$99–$299/mo** | **Simple, affordable, just works. The missing middle.** |
 
-**Our differentiators:**
+**Differentiators:**
 1. Raw data never leaves customer infrastructure (privacy by design)
-2. Zero-config baseline auto-detection (fastest time to value)
-3. Priced for practitioners, not procurement teams
-4. Framework agnostic — works with anything
+2. Local-first — no cloud setup, no account, works in 5 minutes
+3. Continuous proof of life — always shows monitoring state
+4. Priced for practitioners, not procurement teams
+5. Framework agnostic
 
 ---
 
 ## SUCCESS METRICS
 
-### North star
-Number of models actively monitored in production.
+### Beta success criteria (gate for Phase 2)
+- 5 beta users actively using the product on real models
+- At least 3 running on real production data (not toy data)
+- At least 1 says "I would pay for this"
+- At least 1 real drift event detected on real production data
+- Average: dashboard opened at least 3x per week per user
 
-### Activation (most important early metric)
-- Time from signup to first model connected: **< 10 minutes**
-- Time from signup to first drift alert or baseline confirmation: **< 24 hours**
-- Activation rate (signup → model connected): **40%**
-- Day 7 retention of activated users: **50%**
+### Activation (Phase 2 cloud product)
+- Time from pip install to dashboard showing live data: < 10 minutes
+- Activation rate (install → dashboard running): 50%
+- Day 7 retention: 50%
 
-### Revenue targets
-| Month | Paying customers | MRR |
+### Revenue (Phase 2)
+| Month | Customers | MRR |
 |---|---|---|
 | 3 | 5 | $750 |
 | 6 | 20 | $3,500 |
@@ -292,74 +546,85 @@ Number of models actively monitored in production.
 
 ## BUILD PHASES
 
-### Phase 0 — Validation Sprint (Weeks 1–8)
-**No production code.** Research and discovery only.
-- Conduct 10 customer discovery interviews
-- Build landing page to gauge signup intent
-- Complete legal formation (LLC, trademark, domain)
-- Build local proof-of-concept SDK
-- **Gate:** 3 of 10 interviews produce "I would pay for that" → proceed to Phase 1
+### Phase 0 — POC ✅ COMPLETE (May 2026)
+55/55 tests. Validation notebook. All 3 assumptions proven.
 
-### Phase 1 — P0 MVP (Weeks 9–20)
-Build all 6 P0 features to production standard.
-- Python SDK with local statistical profile computation
-- Ingestion API and time-series storage on AWS
-- Drift detection engine (PSI, KS test, baseline comparison)
-- Baseline auto-detection
-- Multi-model dashboard
-- Performance degradation alerting
-- Security baseline
+### Phase 1 — Local Dashboard Server (CURRENT)
+Build order:
+- [ ] Step 1: Local profile storage layer (JSON files in ~/.modelsentry/)
+- [ ] Step 2: FastAPI server with profile reading + drift endpoints
+- [ ] Step 3: HTML/JS dashboard (continuous monitoring, proof of life)
+- [ ] Step 4: `modelsentry serve` CLI entry point
+- [ ] Step 5: Email alert on drift threshold
+- [ ] Step 6: Integration test (full flow)
+- [ ] Step 7: Landing page at modelsentry.com
 
-### Phase 2 — Beta & P1 Features (Weeks 21–32)
-- Launch to 5–10 beta users
-- Build P1 features in response to real usage feedback
-- Stripe billing integration
-- **Gate:** 3+ beta users convert to paid → general availability
+Gate: 5 beta users recruited and actively using → Phase 2
 
-### Phase 3 — GA & Growth (Month 9+)
-- Public launch
-- Content marketing
-- SOC 2 Type I initiation
-- REST API (v1.1)
-- Enterprise tier
+### Phase 2 — Cloud Platform
+After beta validates local product:
+Cloud API, cloud dashboard, Stripe billing, Slack alerts, multi-user workspaces
+
+### Phase 3 — GA & Growth
+Public launch, content marketing, SOC 2, REST API, Enterprise tier
 
 ---
 
-## LEGAL & BUSINESS
+## KNOWN ISSUES
 
-- **Entity:** ModelSentry LLC — file in North Carolina via sosnc.gov ($125)
-- **Domain:** modelsentry.com — register immediately
-- **Trademark:** USPTO Class 042, Intent to Use basis — file within first 2 weeks
-- **Social handles:** @ModelSentry on X, LinkedIn company page, GitHub org (modelsentry)
-- **AWS Activate:** Apply immediately at aws.amazon.com/activate
+### Subagent hallucination (fixed in Version 2.0 subagent files)
+
+During POC build, all three custom subagents hallucinated reports — citing line
+numbers, fields, and imports that did not exist in the actual code. Root cause:
+YAML frontmatter tool permissions were not correctly granting file read access.
+
+**Fix applied:** Subagent files have been rewritten in Version 2.0 with correct
+`allowedTools` syntax. Updated files must be committed before Phase 1 sessions.
+
+**Current workaround:** Until confirmed fixed, treat subagent reports as
+supplementary only. Trust Claude Code's own grep-based self-verification.
 
 ---
 
-## OPEN QUESTIONS (do not assume answers — validate with customers)
+## OPEN QUESTIONS (validate with beta users — do not assume)
 
-1. What should the default baseline window be? (Hypothesis: 14 days)
-2. What statistical tests should be defaults for different model types?
-3. Should retraining be triggered automatically or always require human approval? (Hypothesis: always human approval in v1)
-4. What onboarding flow achieves < 10 minute time-to-first-model?
-5. Will customers want self-hosted / on-premise? (Defer until a customer pays for it)
+1. What is the right default profile_window? (Currently: 100 predictions)
+2. Should `modelsentry serve` auto-open the browser on startup?
+3. SMTP or SendGrid for email alerts? (Ask human before implementing)
+4. Should the dashboard show partial data when a model has < profile_window predictions?
+5. Should profiles persist across server restarts? (Current plan: yes, via JSON files)
+6. What happens when prediction volume is very high (millions/day)?
+7. Will beta users want on-premise cloud deployment? (Defer until asked)
 
 ---
 
 ## INSTRUCTIONS FOR CLAUDE CODE
 
-When using this file with Claude Code, begin every session with:
+### Session start prompt (use every time)
 
-> "Read MODELSENTRY.md before proceeding. Do not make architectural decisions that contradict decisions recorded in that file. If you are unsure whether a decision conflicts with something in MODELSENTRY.md, ask rather than assume."
+```
+Read CLAUDE.md and MODELSENTRY.md completely. Confirm you understand:
+1. Current phase: Phase 1 — Local Dashboard Server
+2. POC is complete — do not modify profiler.py, drift.py, or monitor.py
+3. Proof of Life requirement: dashboard must show continuous monitoring state
+4. Local-first architecture: no cloud infrastructure in Phase 1
+5. Dashboard binds to localhost only
+State the current Phase 1 build step and wait for instruction.
+```
 
-Key constraints Claude Code must respect:
-- The SDK must NEVER transmit raw feature values or raw predictions
-- Statistical profiles are computed locally in the customer environment
-- The SDK must be framework agnostic — no framework-specific imports at the top level
-- All API endpoints must use HTTPS
-- Tenant data isolation is mandatory at the database query level
-- Do not add features not listed in P0 or P1 without explicit approval
-- Do not use Aurora-specific, DynamoDB-specific, or other vendor-lock-in services without approval
+### Hard constraints
+
+- SDK must NEVER transmit raw feature values or raw predictions
+- SDK overhead must remain < 5ms per call (currently 0.6μs — protect this)
+- Never modify profiler.py, drift.py, or monitor.py without explicit instruction
+- Dashboard must show continuous state — not only on drift events
+- Local server: localhost only, never 0.0.0.0
+- Do not add Phase 2 features during Phase 1
+- Python 3.11.9 only
+- All dependencies via Poetry — never pip install directly
+- Do not use Aurora-specific, DynamoDB-specific, or other lock-in services
 
 ---
 
-*MODELSENTRY.md — Keep this file updated as decisions change. The cost of an outdated decision file is an AI agent that builds the wrong thing.*
+*MODELSENTRY.md v2.0 — Updated post-POC, May 2026.*
+*This file is the source of truth. An outdated file means Claude Code builds the wrong thing.*
