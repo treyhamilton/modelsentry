@@ -5,6 +5,30 @@ description = "Early warning when production ML models degrade"
 authors = ["Trey Hamilton <treydavid32@gmail.com>"]
 license = "MIT"
 readme = "README.md"
+homepage = "https://getmodelsentry.com"
+repository = "https://github.com/treyhamilton/modelsentry"
+documentation = "https://github.com/treyhamilton/modelsentry#readme"
+keywords = [
+    "machine-learning",
+    "model-monitoring",
+    "drift-detection",
+    "mlops",
+    "data-drift",
+    "feature-drift",
+    "statistical-monitoring",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Typing :: Typed",
+]
 packages = [{ include = "modelsentry" }]
 
 [tool.poetry.dependencies]
