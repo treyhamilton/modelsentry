@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>You're on the list — ModelSentry</title>
+  <meta name="description" content="Thanks for joining the ModelSentry beta. We'll be in touch soon.">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:         #0f172a;
+      --surface:    #1e293b;
+      --border:     #334155;
+      --text:       #e2e8f0;
+      --muted:      #94a3b8;
+      --accent:     #22c55e;
+      --accent-dim: #15803d;
+      --radius:     8px;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      font-size: 1rem;
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .container { max-width: 680px; margin: 0 auto; padding: 0 1.5rem; width: 100%; }
+
+    /* Nav */
+    .nav {
+      display: flex;
+      align-items: center;
+      padding: 1.25rem 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .nav-logo { font-size: 1.125rem; font-weight: 700; color: var(--text); letter-spacing: -0.02em; text-decoration: none; }
+    .nav-logo span { color: var(--accent); }
+
+    /* Main */
+    main {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      padding: 4rem 0 5rem;
+    }
+
+    .success-wrap { width: 100%; }
+
+    .checkmark {
+      width: 52px;
+      height: 52px;
+      border-radius: 50%;
+      background: rgba(34, 197, 94, 0.12);
+      border: 1px solid rgba(34, 197, 94, 0.3);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 2rem;
+      color: var(--accent);
+    }
+
+    h1 {
+      font-size: 2.25rem;
+      font-weight: 700;
+      letter-spacing: -0.03em;
+      color: var(--text);
+      margin-bottom: 0.875rem;
+      line-height: 1.2;
+    }
+
+    .subheadline {
+      font-size: 1.0625rem;
+      color: var(--muted);
+      margin-bottom: 2.5rem;
+      line-height: 1.7;
+      max-width: 480px;
+    }
+
+    .home-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.375rem;
+      font-size: 0.9375rem;
+      font-weight: 500;
+      color: var(--accent);
+      text-decoration: none;
+      transition: color 0.15s;
+    }
+
+    .home-link:hover { color: var(--accent-dim); }
+
+    /* Footer */
+    .footer {
+      border-top: 1px solid var(--border);
+      padding: 2rem 0;
+      text-align: center;
+    }
+
+    .footer-logo    { font-size: 0.9375rem; font-weight: 700; color: var(--text); margin-bottom: 0.25rem; }
+    .footer-tagline { font-size: 0.8125rem; color: var(--muted); margin-bottom: 0.5rem; }
+    .footer-copy    { font-size: 0.75rem; color: var(--border); }
+
+    @media (min-width: 640px) {
+      h1 { font-size: 2.75rem; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="container">
+    <nav class="nav">
+      <a href="/" class="nav-logo">Model<span>Sentry</span></a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <div class="container">
+    <div class="success-wrap">
+
+      <div class="checkmark">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <polyline points="20 6 9 17 4 12"/>
+        </svg>
+      </div>
+
+      <h1>You're on the list.</h1>
+      <p class="subheadline">We'll be in touch soon with beta access.</p>
+
+      <a href="https://getmodelsentry.com" class="home-link">
+        ← Back to getmodelsentry.com
+      </a>
+
+    </div>
+  </div>
+</main>
+
+<footer class="footer">
+  <div class="container">
+    <div class="footer-logo">ModelSentry</div>
+    <div class="footer-tagline">Know before your users do.</div>
+    <div class="footer-copy">&copy; 2026 ModelSentry</div>
+  </div>
+</footer>
+
+</body>
+</html>
