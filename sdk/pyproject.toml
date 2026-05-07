@@ -12,11 +12,13 @@ python = "^3.11"
 numpy = "*"
 pandas = "*"
 scipy = "*"
+fastapi = "^0.136.1"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "*"
 pytest-cov = "*"
 scikit-learn = "*"
+httpx = "^0.28.1"
 
 [build-system]
 requires = ["poetry-core"]

@@ -449,3 +449,44 @@ def get_prediction_count(model_id: str) -> int:
                 _log.warning("Could not read n_rows from %s: %s", path, exc)
 
     return total
+
+
+def list_models() -> list[str]:
+    """Return all model_ids that have a directory under STORAGE_ROOT.
+
+    Only directories are returned (loose files at the root are ignored).
+    Result is sorted alphabetically.
+
+    Returns:
+        Sorted list of model_id strings; empty list if STORAGE_ROOT is missing.
+    """
+    if not STORAGE_ROOT.exists():
+        return []
+    return sorted(p.name for p in STORAGE_ROOT.iterdir() if p.is_dir())
+
+
+def get_last_updated(model_id: str) -> datetime | None:
+    """Return the most recent mtime across profiles/ and drift_reports/ for a model.
+
+    Used as the dashboard's proof-of-life timestamp — proves monitoring is
+    actively running, not just that a baseline was once recorded. ``baseline.json``
+    is therefore intentionally excluded.
+
+    Args:
+        model_id: Identifier for the model.
+
+    Returns:
+        UTC datetime of the most recently modified profile or drift report file,
+        or None if no such files exist for this model.
+    """
+    candidates: list[Path] = []
+    profiles_dir = _model_dir(model_id) / _PROFILES_DIR
+    drift_dir = _model_dir(model_id) / _DRIFT_DIR
+    if profiles_dir.exists():
+        candidates.extend(profiles_dir.glob("*.json"))
+    if drift_dir.exists():
+        candidates.extend(drift_dir.glob("*.json"))
+    if not candidates:
+        return None
+    latest_mtime = max(p.stat().st_mtime for p in candidates)
+    return datetime.fromtimestamp(latest_mtime, tz=timezone.utc)
