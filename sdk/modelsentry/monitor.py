@@ -14,17 +14,19 @@ import logging
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Callable, TypeVar
 
 import numpy as np
 import pandas as pd
 
+import modelsentry.storage as _storage
 from modelsentry.profiler import Profile, profile
 
 F = TypeVar("F", bound=Callable[..., Any])
 ProfileHandler = Callable[[Profile, str], None]
 
-DEFAULT_PROFILE_WINDOW = 100
+DEFAULT_PROFILE_WINDOW = 500
 
 
 @dataclass
@@ -34,6 +36,7 @@ class _SdkConfig:
     profile_window: int
     profile_handler: ProfileHandler
     logger: logging.Logger
+    storage_path: Path | None
 
 
 @dataclass
@@ -52,10 +55,11 @@ _uninit_warning_emitted = False
 
 def init(
     *,
-    api_key: str,
+    api_key: str = "",
     model_id: str,
     profile_window: int = DEFAULT_PROFILE_WINDOW,
     profile_handler: ProfileHandler | None = None,
+    storage_path: Path | str | None = None,
     logger: logging.Logger | None = None,
 ) -> None:
     """Initialize the ModelSentry SDK.
@@ -64,11 +68,15 @@ def init(
     existing worker and replaces the configuration.
 
     Args:
-        api_key: Cloud API key. Stored but unused in POC (no client.py yet).
+        api_key: Cloud API key. Optional in Phase 1 (local-only). Reserved for
+            Phase 2 cloud transmission.
         model_id: Default model identifier for monitored functions.
-        profile_window: Buffered calls before a profile is computed.
+        profile_window: Buffered calls before a profile is computed. Default 500.
         profile_handler: Callback invoked with (profile, model_id) after each
-            profile is computed. Defaults to a one-line INFO log.
+            profile is computed. Defaults to saving profiles to storage_path and
+            auto-saving the baseline on first profile.
+        storage_path: Directory for profile storage. Defaults to ~/.modelsentry/.
+            Override for testing or custom storage locations.
         logger: Custom logger; defaults to logging.getLogger("modelsentry").
     """
     if profile_window < 1:
@@ -77,13 +85,17 @@ def init(
     if _executor is not None:
         shutdown()
     log = logger or logging.getLogger("modelsentry")
-    handler = profile_handler or _default_profile_handler
+    resolved_path: Path | None = Path(storage_path) if storage_path is not None else None
+    if resolved_path is not None:
+        _storage.STORAGE_ROOT = resolved_path
+    handler = profile_handler if profile_handler is not None else _default_storage_handler
     _config = _SdkConfig(
         api_key=api_key,
         model_id=model_id,
         profile_window=profile_window,
         profile_handler=handler,
         logger=log,
+        storage_path=resolved_path,
     )
     _executor = ThreadPoolExecutor(
         max_workers=1, thread_name_prefix="modelsentry-worker"
@@ -292,8 +304,28 @@ def _coerce_predictions(predictions_list: list[object]) -> np.ndarray:
     return np.concatenate(chunks)
 
 
+def _default_storage_handler(prof: Profile, model_id: str) -> None:
+    """Default handler: persist profile to ~/.modelsentry/ and auto-save baseline."""
+    try:
+        _storage.save_profile(prof, model_id)
+    except Exception:
+        if _config is not None:
+            _config.logger.exception(
+                "modelsentry: failed to save profile for model_id=%s", model_id
+            )
+        return
+    try:
+        if _storage.load_baseline(model_id) is None:
+            _storage.save_baseline(prof, model_id)
+    except Exception:
+        if _config is not None:
+            _config.logger.exception(
+                "modelsentry: failed to save baseline for model_id=%s", model_id
+            )
+
+
 def _default_profile_handler(prof: Profile, model_id: str) -> None:
-    """Default handler: one-line INFO log summarizing the profile."""
+    """Legacy handler: one-line INFO log summarizing the profile."""
     if _config is None:
         return
     feature_names = list(prof.feature_profiles)
