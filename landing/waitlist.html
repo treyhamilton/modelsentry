@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Join the Beta — ModelSentry</title>
+  <meta name="description" content="Join the ModelSentry beta. Free for beta users. No credit card. No enterprise sales process.">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <style>
+    /* Reset */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    /* Variables — identical to index.html */
+    :root {
+      --bg:          #0f172a;
+      --surface:     #1e293b;
+      --border:      #334155;
+      --text:        #e2e8f0;
+      --muted:       #94a3b8;
+      --accent:      #22c55e;
+      --accent-dim:  #15803d;
+      --code-bg:     #0d1117;
+      --radius:      8px;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      font-size: 1rem;
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .container { max-width: 680px; margin: 0 auto; padding: 0 1.5rem; width: 100%; }
+
+    /* Nav */
+    .nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 1.25rem 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .nav-logo { font-size: 1.125rem; font-weight: 700; color: var(--text); letter-spacing: -0.02em; text-decoration: none; }
+    .nav-logo span { color: var(--accent); }
+
+    /* Main content */
+    main {
+      flex: 1;
+      display: flex;
+      align-items: flex-start;
+      padding: 4rem 0 5rem;
+    }
+
+    .waitlist-wrap { width: 100%; }
+
+    .back-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.375rem;
+      font-size: 0.875rem;
+      color: var(--muted);
+      text-decoration: none;
+      margin-bottom: 2.5rem;
+      transition: color 0.15s;
+    }
+
+    .back-link:hover { color: var(--text); }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.8125rem;
+      font-weight: 500;
+      color: var(--accent);
+      background: rgba(34, 197, 94, 0.1);
+      border: 1px solid rgba(34, 197, 94, 0.25);
+      border-radius: 100px;
+      padding: 0.25rem 0.75rem;
+      margin-bottom: 1.5rem;
+    }
+
+    h1 {
+      font-size: 2.25rem;
+      font-weight: 700;
+      letter-spacing: -0.03em;
+      color: var(--text);
+      margin-bottom: 0.875rem;
+      line-height: 1.2;
+    }
+
+    .subheadline {
+      font-size: 1.0625rem;
+      color: var(--muted);
+      margin-bottom: 2.5rem;
+      line-height: 1.7;
+    }
+
+    /* Form card */
+    .form-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 2rem;
+      margin-bottom: 1.5rem;
+    }
+
+    /* Native form */
+    .waitlist-form { display: flex; flex-direction: column; gap: 1.25rem; }
+
+    .form-field { display: flex; flex-direction: column; gap: 0.375rem; }
+
+    .form-label {
+      font-size: 0.875rem;
+      color: var(--muted);
+      font-weight: 500;
+    }
+
+    .form-input,
+    .form-textarea {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      font-family: inherit;
+      font-size: 0.9375rem;
+      padding: 0.75rem 1rem;
+      width: 100%;
+      transition: border-color 0.15s;
+      appearance: none;
+      -webkit-appearance: none;
+    }
+
+    .form-input::placeholder,
+    .form-textarea::placeholder { color: #475569; }
+
+    .form-input:focus,
+    .form-textarea:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+
+    .form-textarea { resize: vertical; min-height: 100px; line-height: 1.6; }
+
+    /* Button */
+    .btn {
+      display: inline-block;
+      padding: 0.75rem 1.5rem;
+      border-radius: var(--radius);
+      font-family: inherit;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      text-decoration: none;
+      transition: background 0.15s, transform 0.1s;
+    }
+
+    .btn-primary       { background: var(--accent); color: #0f172a; }
+    .btn-primary:hover { background: var(--accent-dim); transform: translateY(-1px); }
+    .btn-full          { width: 100%; text-align: center; }
+
+    /* Trust signal */
+    .trust-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1.25rem;
+      margin-top: 1.5rem;
+    }
+
+    .trust-item {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      font-size: 0.8125rem;
+      color: var(--muted);
+    }
+
+    .trust-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--accent);
+      flex-shrink: 0;
+    }
+
+    /* Footer */
+    .footer {
+      border-top: 1px solid var(--border);
+      padding: 2rem 0;
+      text-align: center;
+    }
+
+    .footer-logo    { font-size: 0.9375rem; font-weight: 700; color: var(--text); margin-bottom: 0.25rem; }
+    .footer-tagline { font-size: 0.8125rem; color: var(--muted); margin-bottom: 0.5rem; }
+    .footer-copy    { font-size: 0.75rem; color: var(--border); }
+
+    @media (min-width: 640px) {
+      h1 { font-size: 2.75rem; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="container">
+    <nav class="nav">
+      <a href="/" class="nav-logo">Model<span>Sentry</span></a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <div class="container">
+    <div class="waitlist-wrap">
+
+      <a href="/" class="back-link">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
+        Back
+      </a>
+
+      <div class="eyebrow">
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+          <circle cx="6" cy="6" r="5" stroke="currentColor" stroke-width="1.5"/>
+          <circle cx="6" cy="6" r="2" fill="currentColor"/>
+        </svg>
+        Now in beta
+      </div>
+
+      <h1>Join the beta.</h1>
+      <p class="subheadline">Free for beta users. No credit card. No enterprise sales process.</p>
+
+      <div class="form-card">
+        <form class="waitlist-form" method="POST" name="waitlist" action="/success" netlify data-netlify="true">
+          <input type="hidden" name="form-name" value="waitlist">
+          <div class="form-field">
+            <label class="form-label" for="name">Your name <span style="color: var(--accent)">*</span></label>
+            <input class="form-input" type="text" id="name" name="name" required placeholder="Alex Chen" autocomplete="name">
+          </div>
+          <div class="form-field">
+            <label class="form-label" for="email">Work email <span style="color: var(--accent)">*</span></label>
+            <input class="form-input" type="email" id="email" name="email" required placeholder="alex@company.com" autocomplete="email">
+          </div>
+          <div class="form-field">
+            <label class="form-label" for="pain">What's your biggest ML monitoring headache right now? <span style="color: var(--muted); font-weight: 400">(optional)</span></label>
+            <textarea class="form-textarea" id="pain" name="pain" placeholder="e.g. Models degrade silently and we only find out when a stakeholder notices..."></textarea>
+          </div>
+          <button type="submit" class="btn btn-primary btn-full">Request access &rarr;</button>
+        </form>
+      </div>
+
+      <div class="trust-row">
+        <div class="trust-item"><div class="trust-dot"></div>Free for beta users, forever</div>
+        <div class="trust-item"><div class="trust-dot"></div>No credit card required</div>
+        <div class="trust-item"><div class="trust-dot"></div>Your data never leaves your machine</div>
+      </div>
+
+    </div>
+  </div>
+</main>
+
+<footer class="footer">
+  <div class="container">
+    <div class="footer-logo">ModelSentry</div>
+    <div class="footer-tagline">Know before your users do.</div>
+    <div class="footer-copy">&copy; 2026 ModelSentry</div>
+  </div>
+</footer>
+
+
+</body>
+</html>
