@@ -10,6 +10,7 @@ modelsentry.cli; this module only defines the FastAPI app.
 from __future__ import annotations
 
 import math
+from datetime import datetime
 from pathlib import Path
 from typing import Literal
 
@@ -18,6 +19,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, field_validator
 
 from modelsentry import storage
+from modelsentry.drift import DriftReport
 
 HOST = "127.0.0.1"
 DEFAULT_PORT = 8080
@@ -140,6 +142,7 @@ class DriftReportModel(BaseModel):
     feature_results: dict[str, FeatureDriftResultModel]
     missing_in_current: list[str]
     missing_in_baseline: list[str]
+    detected_at: str | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -172,6 +175,20 @@ class FeaturesResponse(BaseModel):
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+def _drift_to_model(ts: datetime, r: DriftReport) -> DriftReportModel:
+    return DriftReportModel(
+        schema_version=r.schema_version,
+        overall_severity=r.overall_severity,
+        feature_results={
+            k: FeatureDriftResultModel.model_validate(v)
+            for k, v in r.feature_results.items()
+        },
+        missing_in_current=list(r.missing_in_current),
+        missing_in_baseline=list(r.missing_in_baseline),
+        detected_at=ts.isoformat(),
+    )
 
 
 def _require_known_model(model_id: str) -> None:
@@ -334,8 +351,8 @@ def create_app(dashboard_path: Path = DEFAULT_DASHBOARD_PATH) -> FastAPI:
     ) -> list[DriftReportModel]:
         _require_known_model(model_id)
         return [
-            DriftReportModel.model_validate(r)
-            for r in storage.load_drift_reports(model_id, limit=limit)
+            _drift_to_model(ts, r)
+            for ts, r in storage.load_drift_reports_with_timestamps(model_id, limit=limit)
         ]
 
     @app.get(

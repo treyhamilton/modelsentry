@@ -18,6 +18,7 @@ from modelsentry.storage import (
     list_models,
     load_baseline,
     load_drift_reports,
+    load_drift_reports_with_timestamps,
     load_profiles,
     save_baseline,
     save_drift_report,
@@ -528,3 +529,39 @@ def test_get_last_updated_picks_newest_across_profiles_and_drift(tmp_storage):
     assert abs(last.timestamp() - drift_path.stat().st_mtime) < 0.001
     # And it should be later than the profile file's mtime
     assert last.timestamp() > profile_mtime
+
+
+# ---------------------------------------------------------------------------
+# Test: detected_at timestamp in saved drift reports
+# ---------------------------------------------------------------------------
+
+
+def test_save_drift_report_embeds_detected_at(tmp_storage):
+    """save_drift_report embeds a detected_at ISO timestamp in the saved JSON."""
+    report, _, _ = make_drift_report()
+    path = save_drift_report(report, "test-model", timestamp="2026-05-06T11-00-00")
+
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    assert "detected_at" in raw
+    # Must be a parseable ISO timestamp
+    parsed = datetime.fromisoformat(raw["detected_at"])
+    assert parsed.tzinfo is not None
+
+
+def test_load_drift_reports_with_timestamps_returns_datetimes(tmp_storage):
+    """load_drift_reports_with_timestamps returns (datetime, DriftReport) tuples."""
+    report, _, _ = make_drift_report()
+    save_drift_report(report, "test-model", timestamp="2026-05-06T10-00-00")
+    save_drift_report(report, "test-model", timestamp="2026-05-06T11-00-00")
+
+    entries = load_drift_reports_with_timestamps("test-model")
+    assert len(entries) == 2
+
+    for ts, r in entries:
+        assert isinstance(ts, datetime)
+        assert ts.tzinfo is not None
+        assert r.schema_version == report.schema_version
+        assert r.overall_severity == report.overall_severity
+
+    # Newest first
+    assert entries[0][0] >= entries[1][0]
