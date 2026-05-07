@@ -13,7 +13,9 @@ import pytest
 from modelsentry.drift import FeatureDriftResult, detect_drift
 from modelsentry.profiler import profile
 from modelsentry.storage import (
+    get_last_updated,
     get_prediction_count,
+    list_models,
     load_baseline,
     load_drift_reports,
     load_profiles,
@@ -460,3 +462,69 @@ def test_timestamp_string_accepted(tmp_storage):
     path_report = save_drift_report(report, model_id, timestamp=iso_ts)
     assert path_report.exists()
     assert "2026-05-06T14-30-45.json" in str(path_report)
+
+
+# ---------------------------------------------------------------------------
+# Test: list_models / get_last_updated
+# ---------------------------------------------------------------------------
+
+
+def test_list_models_empty(tmp_path, monkeypatch):
+    """list_models returns [] when STORAGE_ROOT does not exist."""
+    import modelsentry.storage as storage_module
+
+    # Point at a non-existent dir
+    monkeypatch.setattr(storage_module, "STORAGE_ROOT", tmp_path / "absent")
+    assert list_models() == []
+
+
+def test_list_models_returns_directory_names(tmp_storage):
+    """list_models returns sorted directory names; ignores files."""
+    prof, _, _ = make_profile()
+    save_baseline(prof, "model-b")
+    save_baseline(prof, "model-a")
+    save_baseline(prof, "model-c")
+
+    # Drop a stray file at STORAGE_ROOT — must be ignored
+    (tmp_storage / "stray.txt").write_text("not a model dir")
+
+    assert list_models() == ["model-a", "model-b", "model-c"]
+
+
+def test_get_last_updated_none_when_empty(tmp_storage):
+    """get_last_updated returns None when no profile or drift files exist."""
+    # Even with a baseline only, get_last_updated should return None
+    # (baseline.json is intentionally excluded — it's not proof of ongoing activity)
+    prof, _, _ = make_profile()
+    save_baseline(prof, "test-model")
+    assert get_last_updated("test-model") is None
+    assert get_last_updated("nonexistent-model") is None
+
+
+def test_get_last_updated_picks_newest_across_profiles_and_drift(tmp_storage):
+    """get_last_updated picks the newest mtime across both directories."""
+    import os
+    import time
+    from datetime import datetime, timezone
+
+    prof, _, _ = make_profile()
+    report, _, _ = make_drift_report()
+    model_id = "test-model"
+
+    # Save profile, then drift report — drift is newer
+    profile_path = save_profile(prof, model_id, timestamp="2026-05-06T10-00-00")
+    time.sleep(0.05)
+    drift_path = save_drift_report(report, model_id, timestamp="2026-05-06T11-00-00")
+
+    # Force drift mtime to be definitively later than the profile mtime
+    # (in case filesystem mtime resolution masks the time.sleep above).
+    profile_mtime = profile_path.stat().st_mtime
+    os.utime(drift_path, (profile_mtime + 10, profile_mtime + 10))
+
+    last = get_last_updated(model_id)
+    assert last is not None
+    assert last.tzinfo is timezone.utc
+    # The mtime returned should match the drift file's mtime
+    assert abs(last.timestamp() - drift_path.stat().st_mtime) < 0.001
+    # And it should be later than the profile file's mtime
+    assert last.timestamp() > profile_mtime
