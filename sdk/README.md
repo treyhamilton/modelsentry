@@ -52,15 +52,25 @@ drift is detected — so you always know the system is alive.
 
 ## How it works
 
-1. **Profile** — the `@ms.monitor()` decorator intercepts your predict function
-   and builds statistical profiles of input features and output distributions.
-2. **Detect** — profiles are compared against a baseline using PSI (Population
-   Stability Index) and KS tests. Severity: stable / warning / critical.
-3. **Alert** — when drift crosses threshold, ModelSentry sends an email directly
-   from your machine via SMTP. No cloud backend required.
+ModelSentry runs as two independent processes — you don't need both running at the
+same time.
 
-Raw feature values and raw predictions are never written to disk or transmitted.
-Only anonymized statistical summaries are stored in `~/.modelsentry/`.
+**In your model (SDK side)**
+
+`@ms.monitor()` captures inputs and outputs on every `predict()` call. Every 500
+predictions (configurable via `profile_window`), it computes a statistical profile
+on a background thread and saves it to `~/.modelsentry/{model_id}/`. The first
+profile is automatically saved as the baseline. Your predict function is not blocked
+— monitoring overhead is under 1ms.
+
+**In your browser (dashboard side)**
+
+`modelsentry serve` reads those profile files whenever you open it. You don't need
+the dashboard running continuously — just open it when you want to check in, or
+after receiving a drift alert email. It auto-refreshes every 60 seconds.
+
+**Storage:** roughly 5–20 KB per profile. At 10,000 predictions/day with
+`profile_window=500`, that's ~20 profiles/day — around 200–400 KB/day.
 
 ---
 
@@ -78,13 +88,13 @@ modelsentry serve \
   --smtp-password "your-app-password"
 ```
 
-### Profile handler (advanced)
+### Custom storage location
 
 ```python
 ms.init(
     model_id="churn-v3",
     profile_window=500,
-    profile_handler=lambda profile: print(f"New profile: {profile}"),
+    storage_path="/data/modelsentry",
 )
 ```
 

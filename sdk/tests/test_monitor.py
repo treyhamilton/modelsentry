@@ -6,11 +6,14 @@ import threading
 import time
 from typing import Callable
 
+from unittest.mock import MagicMock, patch
+
 import numpy as np
 import pandas as pd
 import pytest
 
 import modelsentry as ms
+import modelsentry.storage as _storage_mod
 from modelsentry.monitor import (
     flush,
     get_latest_profile,
@@ -376,3 +379,101 @@ def test_overhead_below_soft_threshold(sdk, small_df):
     print(f"\nmonitor overhead: {overhead_us:.1f}us per call")
     # Spec says <5ms; this is a soft regression guard at 10x.
     assert overhead_us < 50_000.0
+
+
+# ---------------------------------------------------------------------------
+# Default storage handler
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def sdk_default():
+    """Initialize SDK WITHOUT explicit profile_handler — exercises the default
+    storage handler. Storage functions are patched so tests stay hermetic."""
+    with (
+        patch.object(_storage_mod, "save_profile") as mock_save,
+        patch.object(_storage_mod, "save_baseline") as mock_baseline,
+        patch.object(_storage_mod, "load_baseline") as mock_load,
+    ):
+        mock_load.return_value = None  # no baseline exists yet by default
+        ms.init(model_id="test-model", profile_window=3)
+        yield mock_save, mock_baseline, mock_load
+    shutdown()
+
+
+def test_default_handler_saves_profile(sdk_default, small_df):
+    mock_save, _baseline, _load = sdk_default
+
+    @ms.monitor()
+    def predict(X):
+        return np.zeros(len(X))
+
+    for _ in range(3):
+        predict(small_df)
+    flush()
+
+    assert mock_save.call_count == 1
+    saved_profile, saved_model_id = mock_save.call_args[0]
+    assert isinstance(saved_profile, Profile)
+    assert saved_model_id == "test-model"
+
+
+def test_default_handler_saves_baseline_when_none_exists(sdk_default, small_df):
+    _save, mock_baseline, mock_load = sdk_default
+    mock_load.return_value = None  # no baseline
+
+    @ms.monitor()
+    def predict(X):
+        return np.zeros(len(X))
+
+    for _ in range(3):
+        predict(small_df)
+    flush()
+
+    assert mock_baseline.call_count == 1
+    saved_profile, saved_model_id = mock_baseline.call_args[0]
+    assert isinstance(saved_profile, Profile)
+    assert saved_model_id == "test-model"
+
+
+def test_default_handler_skips_baseline_when_exists(sdk_default, small_df):
+    _save, mock_baseline, mock_load = sdk_default
+    mock_load.return_value = MagicMock()  # baseline already exists
+
+    @ms.monitor()
+    def predict(X):
+        return np.zeros(len(X))
+
+    for _ in range(3):
+        predict(small_df)
+    flush()
+
+    mock_baseline.assert_not_called()
+
+
+def test_api_key_optional():
+    """api_key should be optional (defaults to "") for Phase 1 local-only use."""
+    captured = []
+    ms.init(
+        model_id="test-model",
+        profile_window=1000,
+        profile_handler=lambda p, m: captured.append(m),
+    )
+    shutdown()  # no exception = pass
+
+
+def test_storage_path_override():
+    """storage_path overrides the module-level STORAGE_ROOT."""
+    from pathlib import Path
+
+    original_root = _storage_mod.STORAGE_ROOT
+    try:
+        ms.init(
+            model_id="test-model",
+            storage_path="/tmp/ms-test-override",
+            profile_handler=lambda p, m: None,
+        )
+        assert _storage_mod.STORAGE_ROOT == Path("/tmp/ms-test-override")
+    finally:
+        _storage_mod.STORAGE_ROOT = original_root
+        shutdown()

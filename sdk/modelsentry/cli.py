@@ -73,6 +73,13 @@ def cli() -> None:
     default=None,
     help="SMTP password or app password.",
 )
+@click.option(
+    "--profile-window",
+    default=500,
+    show_default=True,
+    type=int,
+    help="Predictions per profile window (informational — set in ms.init()).",
+)
 def serve(
     model: tuple[str, ...],
     port: int,
@@ -81,13 +88,15 @@ def serve(
     smtp_port: int,
     smtp_user: str | None,
     smtp_password: str | None,
+    profile_window: int,
 ) -> None:
     """Start the local dashboard server at http://127.0.0.1:PORT."""
     url = f"http://{HOST}:{port}"
     model_list = ", ".join(model)
     click.echo(f"\nModelSentry {__version__}\n")
-    click.echo(f"  Monitoring:  {model_list}")
-    click.echo(f"  Dashboard:   {url}")
+    click.echo(f"  Monitoring:    {model_list}")
+    click.echo(f"  Dashboard:     {url}")
+    click.echo(f"  Profile window: {profile_window} predictions")
 
     alert_config: AlertConfig | None = None
     if alert_email:
