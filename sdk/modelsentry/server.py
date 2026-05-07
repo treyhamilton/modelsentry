@@ -19,6 +19,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, field_validator
 
 from modelsentry import storage
+from modelsentry.alerts import AlertConfig, send_drift_alert
 from modelsentry.drift import DriftReport
 
 HOST = "127.0.0.1"
@@ -284,17 +285,30 @@ def _build_features_view(model_id: str) -> FeaturesResponse:
 # ---------------------------------------------------------------------------
 
 
-def create_app(dashboard_path: Path = DEFAULT_DASHBOARD_PATH) -> FastAPI:
+def create_app(
+    dashboard_path: Path = DEFAULT_DASHBOARD_PATH,
+    alert_config: AlertConfig | None = None,
+) -> FastAPI:
     """Build the FastAPI app for the local dashboard server.
 
     Args:
         dashboard_path: Path to the static index.html served at GET /.
             Configurable so cli.py and tests can override the default.
+        alert_config: Optional SMTP alert configuration. When provided, a
+            callback is registered with storage so that every saved drift
+            report triggers an email if severity meets the threshold.
 
     Returns:
         FastAPI app instance. Caller is responsible for binding it via uvicorn
         to ``HOST`` only (never 0.0.0.0).
     """
+    if alert_config is not None:
+        storage.set_alert_callback(
+            lambda report, model_id: send_drift_alert(report, model_id, alert_config)
+        )
+    else:
+        storage.set_alert_callback(None)
+
     app = FastAPI(title="ModelSentry Local Dashboard", version="0.1.0")
 
     @app.get("/health", response_model=HealthResponse)
