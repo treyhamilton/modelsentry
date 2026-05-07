@@ -1,0 +1,727 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ModelSentry — Know when your ML models start failing</title>
+  <meta name="description" content="ModelSentry monitors your production ML models for data drift, locally, with no data ever leaving your machine. Early warning before your users notice.">
+  <meta property="og:title" content="ModelSentry — Know when your ML models start failing">
+  <meta property="og:description" content="Monitors your production ML models for data drift, locally. No data leaves your machine.">
+  <meta property="og:type" content="website">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script async src="https://tally.so/widgets/embed.js"></script>
+
+  <style>
+    /* Reset */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    /* Variables */
+    :root {
+      --bg:          #0f172a;
+      --surface:     #1e293b;
+      --border:      #334155;
+      --text:        #e2e8f0;
+      --muted:       #94a3b8;
+      --accent:      #22c55e;
+      --accent-dim:  #15803d;
+      --code-bg:     #0d1117;
+      --critical:    #ef4444;
+      --warning:     #f59e0b;
+      --stable:      #22c55e;
+      --radius:      8px;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      font-size: 1rem;
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* Layout */
+    .container { max-width: 1100px; margin: 0 auto; padding: 0 1.5rem; }
+    .section   { padding: 5rem 0; }
+
+    h1, h2, h3 { line-height: 1.2; }
+
+    .section-label {
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 1rem;
+    }
+
+    .section-headline {
+      font-size: 2rem;
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 1.5rem;
+    }
+
+    /* Button */
+    .btn {
+      display: inline-block;
+      padding: 0.75rem 1.5rem;
+      border-radius: var(--radius);
+      font-family: inherit;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      text-decoration: none;
+      transition: background 0.15s, transform 0.1s;
+    }
+
+    .btn-primary          { background: var(--accent); color: #0f172a; }
+    .btn-primary:hover    { background: var(--accent-dim); transform: translateY(-1px); }
+    .btn-sm               { padding: 0.5rem 1rem; font-size: 0.875rem; }
+
+    /* Nav */
+    .nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 1.25rem 0;
+      position: sticky;
+      top: 0;
+      background: rgba(15, 23, 42, 0.92);
+      backdrop-filter: blur(8px);
+      z-index: 100;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .nav-logo          { font-size: 1.125rem; font-weight: 700; color: var(--text); letter-spacing: -0.02em; }
+    .nav-logo span     { color: var(--accent); }
+
+    /* Hero */
+    .hero {
+      min-height: calc(100vh - 65px);
+      display: flex;
+      align-items: center;
+      padding: 4rem 0;
+    }
+
+    .hero-content { max-width: 780px; }
+
+    .hero-eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.8125rem;
+      font-weight: 500;
+      color: var(--accent);
+      background: rgba(34, 197, 94, 0.1);
+      border: 1px solid rgba(34, 197, 94, 0.25);
+      border-radius: 100px;
+      padding: 0.25rem 0.75rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .hero h1 {
+      font-size: 2.75rem;
+      font-weight: 700;
+      letter-spacing: -0.03em;
+      color: var(--text);
+      margin-bottom: 1.25rem;
+    }
+
+    .hero h1 em    { font-style: normal; color: var(--accent); }
+
+    .hero-sub {
+      font-size: 1.2rem;
+      color: var(--muted);
+      max-width: 600px;
+      margin-bottom: 2.5rem;
+      line-height: 1.7;
+    }
+
+    .hero-cta {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 0.75rem;
+    }
+
+    .fine-print { font-size: 0.8125rem; color: var(--muted); }
+
+    /* Problem */
+    .problem {
+      background: var(--surface);
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .problem-body { max-width: 700px; }
+
+    .problem-body p {
+      color: var(--muted);
+      margin-bottom: 1.25rem;
+      font-size: 1.0625rem;
+      line-height: 1.8;
+    }
+
+    .problem-body p:last-child { margin-bottom: 0; }
+    .problem-body strong       { color: var(--text); font-weight: 500; }
+
+    .problem-closing {
+      margin-top: 2rem;
+      padding: 1.25rem 1.5rem;
+      background: rgba(239, 68, 68, 0.08);
+      border-left: 3px solid var(--critical);
+      border-radius: 0 var(--radius) var(--radius) 0;
+      color: var(--text) !important;
+      font-style: italic;
+    }
+
+    /* How it works */
+    .steps-grid {
+      display: grid;
+      gap: 1.5rem;
+      margin-top: 3rem;
+    }
+
+    .step-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.75rem;
+    }
+
+    .step-number {
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 0.75rem;
+    }
+
+    .step-card h3   { font-size: 1.125rem; font-weight: 600; margin-bottom: 1rem; color: var(--text); }
+    .step-caption   { font-size: 0.875rem; color: var(--muted); margin-top: 1rem; line-height: 1.6; }
+
+    /* Code blocks */
+    .code-block {
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1rem 1.25rem;
+      font-family: ui-monospace, 'Cascadia Code', 'Source Code Pro', Menlo, monospace;
+      font-size: 0.875rem;
+      line-height: 1.7;
+      overflow-x: auto;
+      white-space: pre;
+    }
+
+    .code-block .kw  { color: #c678dd; }
+    .code-block .fn  { color: #61afef; }
+    .code-block .str { color: #98c379; }
+    .code-block .de  { color: #e5c07b; }
+    .code-block .num { color: #d19a66; }
+
+    /* What you see */
+    .see-grid {
+      display: grid;
+      gap: 3rem;
+      margin-top: 3rem;
+      align-items: start;
+    }
+
+    .see-desc p {
+      color: var(--muted);
+      margin-bottom: 1rem;
+      line-height: 1.8;
+    }
+
+    .see-desc ul    { list-style: none; padding: 0; margin-bottom: 1.5rem; }
+
+    .see-desc li {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.625rem;
+      color: var(--muted);
+      margin-bottom: 0.75rem;
+      font-size: 0.9375rem;
+    }
+
+    .see-desc li::before { content: '→'; color: var(--accent); flex-shrink: 0; font-weight: 600; }
+
+    /* Fake dashboard */
+    .fake-dashboard {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+
+    .fake-dashboard-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.875rem 1.25rem;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.875rem;
+    }
+
+    .fake-dashboard-title { font-weight: 600; color: var(--text); }
+
+    .severity-badge {
+      font-size: 0.6875rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      padding: 0.2rem 0.5rem;
+      border-radius: 4px;
+    }
+
+    .severity-critical { background: rgba(239,68,68,0.15);  color: var(--critical); }
+    .severity-warning  { background: rgba(245,158,11,0.15); color: var(--warning); }
+    .severity-stable   { background: rgba(34,197,94,0.15);  color: var(--stable); }
+
+    .fake-table { width: 100%; border-collapse: collapse; font-family: ui-monospace, 'Cascadia Code', monospace; font-size: 0.8125rem; }
+
+    .fake-table th {
+      text-align: left;
+      padding: 0.5rem 1.25rem;
+      font-size: 0.6875rem;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--muted);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .fake-table td {
+      padding: 0.625rem 1.25rem;
+      color: var(--text);
+      border-bottom: 1px solid rgba(51, 65, 85, 0.4);
+    }
+
+    .fake-table tr:last-child td { border-bottom: none; }
+
+    .fake-dashboard-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.75rem 1.25rem;
+      border-top: 1px solid var(--border);
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+
+    /* Email mockup */
+    .email-mockup {
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+
+    .email-header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 0.75rem 1.25rem;
+    }
+
+    .email-field            { font-size: 0.75rem; color: var(--muted); margin-bottom: 0.2rem; }
+    .email-field span       { color: var(--text); }
+
+    .email-body {
+      padding: 1rem 1.25rem;
+      font-family: ui-monospace, 'Cascadia Code', monospace;
+      font-size: 0.8125rem;
+      line-height: 1.7;
+      color: var(--muted);
+      white-space: pre;
+    }
+
+    .email-body .em-critical { color: var(--critical); }
+    .email-body .em-warning  { color: var(--warning); }
+    .email-body .em-stable   { color: var(--stable); }
+
+    /* Privacy */
+    .privacy {
+      background: var(--surface);
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .privacy-callout {
+      border-left: 4px solid var(--accent);
+      padding-left: 2rem;
+      max-width: 780px;
+    }
+
+    .privacy-icon   { color: var(--accent); margin-bottom: 1.25rem; }
+
+    .privacy-callout h2 {
+      font-size: 1.75rem;
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 1.25rem;
+      letter-spacing: -0.02em;
+    }
+
+    .privacy-callout p {
+      color: var(--muted);
+      margin-bottom: 1rem;
+      line-height: 1.8;
+      font-size: 1.0625rem;
+    }
+
+    .privacy-callout p:last-of-type { margin-bottom: 0; }
+
+    .privacy-points { display: flex; flex-direction: column; gap: 0.625rem; margin-top: 1.5rem; }
+
+    .privacy-point {
+      display: flex;
+      align-items: center;
+      gap: 0.625rem;
+      font-size: 0.9375rem;
+      color: var(--text);
+    }
+
+    .privacy-point-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--accent);
+      flex-shrink: 0;
+    }
+
+    /* Waitlist */
+    .waitlist { text-align: center; }
+
+    .waitlist h2 {
+      font-size: 2rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      margin-bottom: 1rem;
+    }
+
+    .waitlist p {
+      color: var(--muted);
+      font-size: 1.0625rem;
+      max-width: 520px;
+      margin: 0 auto 0.5rem;
+      line-height: 1.7;
+    }
+
+    .waitlist-fine {
+      font-size: 0.875rem;
+      color: var(--muted);
+      font-style: italic;
+      margin-bottom: 2rem;
+    }
+
+    .waitlist-cta-wrap {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    /* Footer */
+    .footer {
+      border-top: 1px solid var(--border);
+      padding: 2.5rem 0;
+      text-align: center;
+    }
+
+    .footer-logo     { font-size: 1rem; font-weight: 700; color: var(--text); margin-bottom: 0.25rem; }
+    .footer-tagline  { font-size: 0.875rem; color: var(--muted); margin-bottom: 1rem; }
+    .footer-built    { font-size: 0.8125rem; color: var(--muted); margin-bottom: 1rem; }
+    .footer-copy     { font-size: 0.75rem; color: var(--border); }
+
+    /* Responsive */
+    @media (min-width: 768px) {
+      .hero h1                    { font-size: 3.5rem; }
+      .hero-cta                   { flex-direction: row; align-items: center; }
+      .steps-grid                 { grid-template-columns: repeat(3, 1fr); }
+      .see-grid                   { grid-template-columns: 1fr 1fr; }
+      .section-headline           { font-size: 2.25rem; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- NAV -->
+<header>
+  <div class="container">
+    <nav class="nav">
+      <div class="nav-logo">Model<span>Sentry</span></div>
+      <button class="btn btn-primary btn-sm"
+              data-tally-open="XXXXXXXX"
+              data-tally-emoji-text="👋"
+              data-tally-emoji-animation="wave">
+        Join the waitlist
+      </button>
+    </nav>
+  </div>
+</header>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="container">
+    <div class="hero-content">
+      <div class="hero-eyebrow">
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+          <circle cx="6" cy="6" r="5" stroke="currentColor" stroke-width="1.5"/>
+          <circle cx="6" cy="6" r="2" fill="currentColor"/>
+        </svg>
+        Now in beta
+      </div>
+      <h1>Your model is drifting.<br><em>You won't know</em> until it's too late.</h1>
+      <p class="hero-sub">
+        ModelSentry monitors your production ML models for data drift —
+        locally, with no data ever leaving your machine.
+      </p>
+      <div class="hero-cta">
+        <button class="btn btn-primary"
+                data-tally-open="XXXXXXXX"
+                data-tally-emoji-text="👋"
+                data-tally-emoji-animation="wave">
+          Join the beta — it's free &rarr;
+        </button>
+        <span class="fine-print">Free for beta users. No credit card. No enterprise sales process.</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- PROBLEM -->
+<section class="problem section">
+  <div class="container">
+    <div class="section-label">The problem</div>
+    <h2 class="section-headline">Sound familiar?</h2>
+    <div class="problem-body">
+      <p>
+        Six months after you deployed the churn model, something changed.
+        New marketing channels brought in a <strong>different demographic</strong> — younger users,
+        different income brackets, different behavior patterns. The model kept
+        predicting. Confidently. Silently. On data it had never seen.
+      </p>
+      <p>
+        You found out when a product manager pinged you asking why churn had
+        <strong>jumped 12% in Q3</strong>.
+      </p>
+      <p>
+        You pulled the feature distributions. The age column had shifted by nearly
+        15 years. Income looked nothing like training. The model had been
+        extrapolating for months — and you had no early warning system in place.
+      </p>
+      <p class="problem-closing">
+        "There was no alarm. There should have been."
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- HOW IT WORKS -->
+<section class="section">
+  <div class="container">
+    <div class="section-label">How it works</div>
+    <h2 class="section-headline">Three steps. No infrastructure.</h2>
+
+    <div class="steps-grid">
+
+      <div class="step-card">
+        <div class="step-number">Step 1</div>
+        <h3>Install (30 seconds)</h3>
+        <div class="code-block"><span class="fn">pip</span> install modelsentry</div>
+        <p class="step-caption">Runs anywhere Python runs. No Docker. No cloud account. No infra to manage.</p>
+      </div>
+
+      <div class="step-card">
+        <div class="step-number">Step 2</div>
+        <h3>Wrap your predict function</h3>
+        <div class="code-block"><span class="kw">import</span> modelsentry <span class="kw">as</span> ms
+
+ms.<span class="fn">init</span>(model_id=<span class="str">"churn-v3"</span>,
+       profile_window=<span class="num">500</span>)
+
+<span class="de">@ms.monitor()</span>
+<span class="kw">def</span> <span class="fn">predict</span>(features_df):
+    <span class="kw">return</span> model.<span class="fn">predict</span>(features_df)</div>
+        <p class="step-caption">One decorator. No changes to your model logic. No SDK calls inside predict().</p>
+      </div>
+
+      <div class="step-card">
+        <div class="step-number">Step 3</div>
+        <h3>Open the dashboard</h3>
+        <div class="code-block">modelsentry serve \
+  --model churn-v3</div>
+        <p class="step-caption">Opens localhost:8080. PSI and KS drift scores update as predictions roll in. You get an email the moment drift crosses your threshold.</p>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- WHAT YOU SEE -->
+<section class="section" style="background: var(--surface); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);">
+  <div class="container">
+    <div class="section-label">The dashboard</div>
+    <h2 class="section-headline">Tells you <span style="color: var(--accent)">what</span> changed, not just that something did.</h2>
+
+    <div class="see-grid">
+
+      <div class="see-desc">
+        <p>
+          Most monitoring tools tell you "accuracy dropped."
+          ModelSentry tells you <strong>which features drifted</strong>,
+          by how much, and whether it's worth waking up for.
+        </p>
+        <ul>
+          <li>Per-feature PSI and KS statistics, color-coded by severity</li>
+          <li>Baseline vs. current distribution comparison for every feature</li>
+          <li>Alert history with timestamps — know when drift first appeared</li>
+          <li>Prediction volume counter — catch traffic shifts too</li>
+          <li>Auto-refreshes every 60 seconds while the tab is open</li>
+        </ul>
+        <div class="email-mockup">
+          <div class="email-header">
+            <div class="email-field">Subject: <span>[ModelSentry] CRITICAL drift detected — churn-v3</span></div>
+            <div class="email-field">From: <span>you@gmail.com (via ModelSentry)</span></div>
+          </div>
+          <div class="email-body"><span class="em-critical">&#9632; age:    PSI 0.31 &mdash; CRITICAL</span>
+<span class="em-warning">&#9650; income: PSI 0.18 &mdash; WARNING</span>
+<span class="em-stable">&#9679; country: PSI 0.04 &mdash; stable</span>
+
+Dashboard: http://localhost:8080</div>
+        </div>
+      </div>
+
+      <div>
+        <div class="fake-dashboard">
+          <div class="fake-dashboard-header">
+            <span class="fake-dashboard-title">churn-v3</span>
+            <span class="severity-badge severity-critical">&#9632; Critical drift</span>
+          </div>
+          <table class="fake-table">
+            <thead>
+              <tr>
+                <th>Feature</th>
+                <th>PSI</th>
+                <th>KS p-val</th>
+                <th>Severity</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>age</td>
+                <td>0.31</td>
+                <td>0.001</td>
+                <td><span class="severity-badge severity-critical">&#9632; critical</span></td>
+              </tr>
+              <tr>
+                <td>income</td>
+                <td>0.18</td>
+                <td>0.023</td>
+                <td><span class="severity-badge severity-warning">&#9650; warning</span></td>
+              </tr>
+              <tr>
+                <td>country</td>
+                <td>0.04</td>
+                <td>0.412</td>
+                <td><span class="severity-badge severity-stable">&#9679; stable</span></td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="fake-dashboard-footer">
+            <span>Last updated: 2 minutes ago</span>
+            <span>Predictions: 12,847</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- PRIVACY PROMISE -->
+<section class="privacy section">
+  <div class="container">
+    <div class="privacy-callout">
+      <div class="privacy-icon">
+        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+          <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+        </svg>
+      </div>
+      <h2>Your data never leaves your machine.</h2>
+      <p>
+        ModelSentry computes statistical profiles locally — histograms, means,
+        PSI scores, KS statistics. Raw feature values and raw predictions are
+        never written to disk, never transmitted over a network, never seen by anyone.
+      </p>
+      <p>
+        The dashboard runs at
+        <code style="background: var(--code-bg); padding: 0.1em 0.4em; border-radius: 4px; font-size: 0.875em; font-family: ui-monospace, monospace;">localhost:8080</code>.
+        Email alerts are sent from your own Gmail account via your own app password.
+        We have no servers that touch your data. There is nothing to breach.
+      </p>
+      <div class="privacy-points">
+        <div class="privacy-point">
+          <div class="privacy-point-dot"></div>
+          Raw feature values — never persisted, never transmitted
+        </div>
+        <div class="privacy-point">
+          <div class="privacy-point-dot"></div>
+          Raw predictions — never written to disk
+        </div>
+        <div class="privacy-point">
+          <div class="privacy-point-dot"></div>
+          Dashboard — localhost only, never exposed to the network
+        </div>
+        <div class="privacy-point">
+          <div class="privacy-point-dot"></div>
+          SMTP — your credentials, your inbox, your control
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- WAITLIST CTA -->
+<section class="waitlist section">
+  <div class="container">
+    <div class="section-label">Early access</div>
+    <h2 class="section-headline">Get early access.</h2>
+    <p>
+      We're opening the beta to a small group of data scientists. No credit card.
+      No enterprise sales process. No SaaS subscription to cancel.
+    </p>
+    <p>Install, monitor, and tell us what breaks.</p>
+    <p class="waitlist-fine">Free for beta users, forever.</p>
+    <div class="waitlist-cta-wrap">
+      <button class="btn btn-primary"
+              data-tally-open="XXXXXXXX"
+              data-tally-emoji-text="👋"
+              data-tally-emoji-animation="wave">
+        Join the waitlist &rarr;
+      </button>
+      <span class="fine-print">No credit card. Takes 30 seconds.</span>
+    </div>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer class="footer">
+  <div class="container">
+    <div class="footer-logo">ModelSentry</div>
+    <div class="footer-tagline">Know before your users do.</div>
+    <div class="footer-built">Built by a data scientist, for data scientists.</div>
+    <div class="footer-copy">&copy; 2026 ModelSentry</div>
+  </div>
+</footer>
+
+</body>
+</html>
