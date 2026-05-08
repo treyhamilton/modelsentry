@@ -1,7 +1,7 @@
 # MODELSENTRY.md
 # Project Memory File — Read this before making ANY architectural or product decision.
-# Last updated: May 2026 | Version: 2.0
-# IMPORTANT: This file was significantly updated after POC completion. Version 1.0 is obsolete.
+# Last updated: May 2026 | Version: 2.2
+# IMPORTANT: v2.1 had outdated SDK API, wrong domain, missing beta infrastructure.
 
 ---
 
@@ -20,31 +20,46 @@ ask the human before assuming.
 
 ## CURRENT PROJECT STATUS
 
-**Phase:** Phase 1 — COMPLETE. Beta outreach in progress as of May 2026.
-**POC:** COMPLETE — all 6 steps done, 55/55 tests passing
-**Phase 1:** COMPLETE — 148/148 tests passing. `pip install modelsentry` live on PyPI.
+**Phase:** Phase 1 COMPLETE. Beta recruitment in progress as of May 2026.
+**POC:** COMPLETE — 55/55 tests
+**Phase 1:** COMPLETE — 153/153 tests passing. `pip install modelsentry` live on PyPI v0.1.1
 **Next milestone:** 5 beta users actively using product on real models → gate for Phase 2
 
 ### What has been built (do not rebuild or redesign without explicit instruction)
 
+**SDK modules:**
 - `sdk/modelsentry/profiler.py` — 322 lines, statistical profile computation, 19 tests
 - `sdk/modelsentry/drift.py` — 287 lines, PSI + KS drift detection, 19 tests
-- `sdk/modelsentry/monitor.py` — 304 lines, @ms.monitor() decorator, 17 tests
+- `sdk/modelsentry/monitor.py` — framework-agnostic decorator, default local storage, 17+ tests
 - `sdk/modelsentry/storage.py` — local JSON profile persistence (~/.modelsentry/)
 - `sdk/modelsentry/server.py` — FastAPI dashboard server, localhost:8080
 - `sdk/modelsentry/alerts.py` — SMTP email alert module (AlertConfig + send_drift_alert)
-- `sdk/modelsentry/cli.py` — `modelsentry serve` CLI with email alert flags
-- `sdk/modelsentry/__init__.py` — clean public API, version 0.1.0
+- `sdk/modelsentry/cli.py` — `modelsentry serve` CLI with all email alert flags
+- `sdk/modelsentry/__init__.py` — clean public API, version 0.1.1
 - `sdk/pyproject.toml` — Poetry config, Python 3.11, all Phase 1 deps
-- `dashboard/index.html` — single-page dashboard, 7 requirements met
-- `landing/index.html` — landing page live at getmodelsentry.com
-- `notebooks/poc_validation.ipynb` — 17-cell validation notebook, all 3 assumptions PASS
 
-### CLI interface (current — as shipped)
+**Frontend and landing:**
+- `dashboard/index.html` — single-page dashboard, all 7 Proof of Life requirements met
+- `landing/index.html` — main landing page at getmodelsentry.com
+- `landing/waitlist.html` — dedicated dark-themed beta signup page (Netlify Forms)
+- `landing/success.html` — post-submission page with install instructions and personal note
+- `netlify.toml` — Netlify publish config and redirect rules
+
+**Infrastructure:**
+- `notebooks/poc_validation.ipynb` — 17-cell validation notebook, all 3 assumptions PASS
+- `.github/ISSUE_TEMPLATE/bug_report.md` — GitHub bug report template
+- `.github/ISSUE_TEMPLATE/feature_request.md` — GitHub feature request template
+- `.github/ISSUE_TEMPLATE/config.yml` — disables blank issues, adds email contact link
+- `docs/beta-acceptance-email.md` — email template sent within 24hrs of signup
+- `docs/beta-feedback-email.md` — email template sent after 2 weeks of use
+
+### CLI interface (current — as shipped in v0.1.1)
 
 ```bash
 modelsentry serve \
   --model churn-v3 \
+  --port 8080 \
+  --profile-window 500 \
   --alert-email you@company.com \
   --smtp-host smtp.gmail.com \
   --smtp-port 587 \
@@ -53,6 +68,21 @@ modelsentry serve \
 ```
 
 `--alert-email` is optional. `--smtp-host` defaults to `smtp.gmail.com`, `--smtp-port` to `587`.
+`--profile-window` is informational (shown in startup banner). Set in ms.init() in model code.
+
+### Quickstart (zero config — just works in v0.1.1)
+
+```python
+import modelsentry as ms
+
+ms.init(model_id="churn-v3")  # api_key optional, storage auto-configured
+
+@ms.monitor()
+def predict(features_df):
+    return model.predict(features_df)
+```
+
+Profiles auto-save to `~/.modelsentry/churn-v3/`. Baseline auto-detected on first profile.
 
 ### POC validation results (confirmed working on synthetic data)
 
@@ -177,11 +207,10 @@ model internals. Works with any framework. Verified in POC.
 ### PRINCIPLE 3 — ZERO-CONFIG BASELINE
 
 ModelSentry automatically establishes a statistical baseline from the first N
-predictions observed. No manual configuration required.
+predictions observed. No manual configuration required. Default storage handler
+saves profiles to ~/.modelsentry/ automatically — no profile_handler lambda needed.
 
 ### PRINCIPLE 4 — PROOF OF LIFE (CRITICAL UX REQUIREMENT)
-
-**Added in Version 2.0. This is non-negotiable.**
 
 A dashboard that only shows content when drift is detected has a fatal UX flaw:
 users cannot tell if the tool is working or broken during normal operation.
@@ -202,111 +231,147 @@ breaking before her boss does?" If not, it does not belong in the MVP.
 
 ---
 
-## PHASE 1 BUILD — LOCAL DASHBOARD SERVER
+## TWO-PROCESS MODEL (HOW IT WORKS)
 
-### What we are building
+ModelSentry runs as two independent processes. Beta users must understand this.
 
-A lightweight local web server Alex runs alongside her model. It reads profiles
-computed by the SDK, detects drift, and serves a visual dashboard at
-localhost:8080. No cloud, no account, no data leaving her machine.
+**Process 1 — SDK (runs inside their model, continuously)**
+The @ms.monitor() decorator captures inputs and outputs on every predict() call.
+Every 500 predictions (configurable via profile_window), it computes a statistical
+profile and saves it to ~/.modelsentry/{model_id}/. On the first profile, it
+auto-saves that as the baseline. This runs on a background thread with < 1ms
+overhead. Their model code is unaffected.
 
-### CLI interface
+**Process 2 — Dashboard (run it when you want to check in)**
+`modelsentry serve` reads profile files whenever opened. Does not need to run
+continuously. Open it when you want to investigate or after receiving a drift
+alert email. Auto-refreshes every 60 seconds.
 
-```bash
-modelsentry serve --model churn-v3 --port 8080
-```
-
-Alex opens `http://localhost:8080` and sees her model's health.
-
-### Dashboard requirements (must all be present)
-
-1. **Model health overview** — green/yellow/red status per model
-2. **Prediction volume** — total predictions monitored, count in last window
-3. **Per-feature distributions** — current vs. baseline charts/histograms
-4. **Drift scores** — PSI and KS per feature, color-coded by severity
-5. **Last updated timestamp** — must update regularly to prove system is alive
-6. **Alert history** — recent drift events with timestamps and severity
-7. **"All systems nominal" state** — explicitly shown when no drift detected
-
-### Dashboard technology
-
-- **Backend:** FastAPI serving JSON API endpoints
-- **Frontend:** Single-page HTML/JS — no React build toolchain for Phase 1
-- **Auto-refresh:** Every 60 seconds (configurable)
-- **Process:** Runs as background process alongside customer's model
-- **Binding:** localhost only — never 0.0.0.0
-
-### Profile storage
-
-```
-~/.modelsentry/
-  {model_id}/
-    baseline.json           ← baseline profile (first N predictions)
-    profiles/               ← rolling window of recent profiles
-      2026-05-06T14:00.json
-      2026-05-06T15:00.json
-    drift_reports/          ← computed drift reports
-      2026-05-06T15:00.json
-```
-
-No database. JSON files. Persists across server restarts.
-
-### Email alert
-
-- Sends when drift crosses threshold
-- SMTP or SendGrid (decide during build — ask human)
-- Configurable: recipient, threshold, model_id
-- Sends directly from customer's machine — no cloud backend needed
-- One email per drift event
-
-### Why local-first for Phase 1
-
-1. Zero cloud infrastructure cost or complexity during beta
-2. Zero signup friction — install pip, run command, open browser
-3. Strongest privacy story — "nothing leaves your machine"
-4. Faster to build — no auth, no database, no deployment pipeline
-5. Beta feedback tells us what the cloud dashboard needs before we build it
+**Storage footprint:** ~5–20 KB per profile. At 10,000 predictions/day with
+profile_window=500, that's ~20 profiles/day or ~200–400 KB/day. Very manageable.
 
 ---
 
 ## GO-TO-MARKET — BETA PROGRAM
 
-### Decision: Beta users over discovery interviews
+### Decision: Open product, relationship program (NOT gated access)
 
-Rather than pure discovery interviews, we recruit 5 beta users who actually
-install and use the product. Beta users provide richer signal — they find real
-bugs, real edge cases, real workflow friction that no interview reveals.
+**CRITICAL DECISION — DO NOT REVERSE WITHOUT DISCUSSION**
 
-### Beta pitch
+ModelSentry is fully open. Anyone can `pip install modelsentry` and use it
+without permission. The GitHub repo is public. PyPI is public.
 
-"I built something. Install it with pip. It monitors your production models and
-shows you a local dashboard of model health in real time. Looking for 5 data
-scientists to try it on real models and tell me what is broken. Free forever
-for beta users."
+The beta program is a **relationship program**, not an access gate. It exists
+to identify engaged users so we can build personal relationships with them
+before they become paying customers.
 
-### Beta readiness checklist
+**What beta users get that random users don't:**
+- Personal onboarding from Trey within 24 hours
+- Direct line for bug reports and fast fixes
+- Input on what we build next
+- Free Pro tier features when cloud product launches
+- "Founding user" status
+
+This decision is based on:
+1. Every successful comparable tool (Evidently, WhyLabs, NannyML) launched fully open
+2. Product-led growth only works if Alex can find and try it without asking permission
+3. Open source SDK is standard for developer tools — trust is built by showing the code
+4. "Your data never leaves your machine" is more credible when users can verify the code
+
+### Beta communication infrastructure
+
+**Public-facing (website):**
+- Waitlist form: `getmodelsentry.com/waitlist` (Netlify Forms, dark-themed)
+- Success page: `getmodelsentry.com/success.html` (shows install instructions immediately)
+- Email notifications: `getmodelsentry@gmail.com` gets notified on every signup
+
+**Private forms (sent via email to specific users):**
+- Beta Onboarding form: `https://tally.so/r/vGEXlD` — sent within 24hrs of signup
+- Beta Feedback form: `https://tally.so/r/2E1j0j` — sent after 2 weeks of use
+
+**Email templates:**
+- Beta acceptance email: `docs/beta-acceptance-email.md` — personal, from Trey, < 200 words
+- Beta feedback email: `docs/beta-feedback-email.md` — sent at 2-week mark
+
+**Bug reporting:**
+- GitHub Issues: primary channel (public, templates set up)
+- Email: `getmodelsentry@gmail.com` for personal/sensitive questions
+
+### Beta onboarding form fields (tally.so/r/vGEXlD)
+Name, job title, company name, company size, models in production,
+primary ML framework, current monitoring approach, what would make
+ModelSentry a must-have.
+
+### Beta feedback form fields (tally.so/r/2E1j0j)
+Setup ease (1-5), drift detected (yes/no/not yet), what almost made
+them quit, feature requests, willingness to pay, NPS (recommend yes/maybe/no).
+
+### Beta readiness checklist — ALL COMPLETE
 
 - [x] Local dashboard server running and showing continuous monitoring state
 - [x] Email alert working on drift detection
 - [x] getmodelsentry.com live with landing page + waitlist signup
+- [x] getmodelsentry.com/waitlist — dark-themed form, Netlify Forms
+- [x] getmodelsentry.com/success.html — install instructions shown immediately
 - [x] Full flow demoed end-to-end in under 10 minutes on a real model
 - [x] README with clear install and quickstart instructions
-- [x] Published to PyPI — `pip install modelsentry` works
+- [x] Published to PyPI — `pip install modelsentry` works (v0.1.1)
+- [x] GitHub Issue templates (bug report + feature request)
+- [x] Beta Onboarding Tally form created
+- [x] Beta Feedback Tally form created
+- [x] Email templates written (acceptance + feedback)
 
-**Status: outreach in progress as of 2026-05-07.**
+**Status: Ready for outreach. Recruiting 5 beta users.**
+
+### Outreach strategy
+- Target: warm contacts who are data scientists or ML engineers with models in production
+- Approach: personal message, not a template blast
+- Goal: 5 people who will install and use it on real models
+- Calls: offer 15-minute onboarding call to warm contacts
+- Forms: send onboarding Tally form to all beta signups within 24 hours
 
 ### Legal formation (intentionally deferred)
 
-Decision: LLC and trademark filing are deferred until beta validates the idea.
-**Only exception: register modelsentry.com domain immediately (~$15).**
-
 File LLC and trademark when:
-- At least 3 beta users are actively using the product on real models
+- At least 3 beta users are actively using on real models
 - At least 1 says "I would pay for this"
+
+**Domain registered:** getmodelsentry.com (Namecheap, May 2026)
+**Email:** getmodelsentry@gmail.com
+**Hosting:** Netlify (connected to GitHub, auto-deploys on push to main)
 
 ---
 
-## SDK PUBLIC API — CURRENT STATE
+## SDK PUBLIC API — CURRENT STATE (v0.1.1)
+
+### monitor.py — UPDATED in v0.1.1
+
+```python
+import modelsentry as ms
+
+ms.init(
+    *,
+    api_key: str = "",          # optional — stored, not transmitted in Phase 1
+    model_id: str,              # required
+    profile_window: int = 500,  # changed from 100 to 500 in v0.1.1
+    profile_handler: Callable | None = None,  # None = auto-save to ~/.modelsentry/
+    storage_path: Path | str | None = None,   # NEW in v0.1.1 — override storage location
+    logger: logging.Logger | None = None,
+)
+
+@ms.monitor(model_id: str | None = None)
+def predict(features): ...
+
+# Operational helpers (import directly):
+from modelsentry.monitor import flush, shutdown, get_latest_profile
+```
+
+**Key v0.1.1 changes:**
+- `api_key` is now optional (default `""`) — no longer causes TypeError
+- `profile_window` default changed from 100 to 500
+- Default behavior: profiles auto-save to `~/.modelsentry/` without any profile_handler
+- Auto-baseline: first profile is automatically saved as baseline if none exists
+- `storage_path` parameter added for custom storage location
 
 ### profiler.py
 
@@ -352,35 +417,10 @@ report: DriftReport = detect_drift(
 # .feature_results: dict[str, FeatureDriftResult]
 # .missing_in_current: tuple[str, ...]
 # .missing_in_baseline: tuple[str, ...]
+# .detected_at: str | None  (ISO timestamp, added in Phase 1)
 
 # FeatureDriftResult fields:
-# .name: str
-# .dtype: Literal["numeric", "categorical"]
-# .severity: Literal["stable", "warning", "critical"]
-# .psi: float
-# .ks_statistic: float | None (numeric only)
-# .ks_p_value: float | None (numeric only)
-# .notes: tuple[str, ...]
-```
-
-### monitor.py
-
-```python
-import modelsentry as ms
-
-ms.init(
-    api_key: str,           # stored, not transmitted in Phase 1
-    model_id: str,
-    profile_window: int = 100,
-    profile_handler: Callable | None = None,
-    logger: logging.Logger | None = None,
-)
-
-@ms.monitor(model_id: str | None = None)
-def predict(features): ...
-
-# Operational helpers (import directly):
-from modelsentry.monitor import flush, shutdown, get_latest_profile
+# .name, .dtype, .severity, .psi, .ks_statistic, .ks_p_value, .notes
 ```
 
 ### Package surface
@@ -388,45 +428,45 @@ from modelsentry.monitor import flush, shutdown, get_latest_profile
 ```python
 import modelsentry as ms
 # Exports: ms.init, ms.monitor, ms.Profile, ms.DriftReport, ms.__version__
+# Version: 0.1.1
 ```
 
 ---
 
 ## KNOWN TECHNICAL DEBT
 
-These are known issues to fix in Phase 2. Do not fix in Phase 1 without
-explicit instruction — they are acceptable for beta.
+Fix in Phase 2. Do not fix in Phase 1 without explicit instruction.
 
 1. **Mutable dicts in frozen dataclasses:** `feature_profiles`, `value_counts`,
-   `class_counts` are dicts inside frozen dataclasses. `frozen=True` blocks
-   field reassignment but not `.update()`. Fix with `MappingProxyType` in Phase 2.
+   `class_counts` are dicts inside frozen dataclasses. Fix with `MappingProxyType`.
 
-2. **KS test uses histogram reconstruction:** drift.py reconstructs synthetic
-   samples from bin midpoints (Option A, approximate at ~10% per bin width)
-   rather than computing the statistic directly from empirical CDFs (Option B,
-   exact). Acceptable for Phase 1. Upgrade in Phase 2.
+2. **KS test uses histogram reconstruction (Option A):** Approximate at ~10% per
+   bin width. Upgrade to Option B (empirical CDFs) in Phase 2.
 
-3. **Integer predictions treated as regression:** Low-cardinality integer class
-   IDs (0/1) are profiled as regression. String labels work correctly as
-   classification. Flagged in profiler.py docstring. Fix in Phase 2.
+3. **Integer predictions treated as regression:** Low-cardinality int class IDs
+   (0/1) profiled as regression. String labels work correctly. Fix in Phase 2.
 
 ---
 
 ## FEATURE PRIORITY TIERS
 
-### Phase 1 P0 — Must ship for beta (in build order)
+### Phase 1 P0 — All complete ✅
 
 | Feature | Status |
 |---|---|
 | Python SDK with @ms.monitor() | ✅ DONE |
-| Local profile storage (~/.modelsentry/) | ✅ DONE |
+| Default local storage (zero config) | ✅ DONE — v0.1.1 |
 | FastAPI local server with profile endpoints | ✅ DONE |
 | HTML/JS dashboard with continuous monitoring display | ✅ DONE |
-| `modelsentry serve` CLI command | ✅ DONE |
+| `modelsentry serve` CLI command with email flags | ✅ DONE |
 | Email alert on drift threshold breach | ✅ DONE |
 | Full integration test (install → monitor → dashboard → alert) | ✅ DONE |
-| Landing page at getmodelsentry.com with waitlist | ✅ DONE |
-| Published to PyPI (`pip install modelsentry` works) | ✅ DONE — v0.1.0 |
+| Landing page at getmodelsentry.com | ✅ DONE |
+| Waitlist page + success page | ✅ DONE |
+| Published to PyPI (`pip install modelsentry` works) | ✅ DONE — v0.1.1 |
+| GitHub Issue templates | ✅ DONE |
+| Beta communication forms (onboarding + feedback) | ✅ DONE |
+| Beta acceptance email template | ✅ DONE |
 
 ### P1 — After beta validates core (do not build yet)
 
@@ -439,7 +479,7 @@ explicit instruction — they are acceptable for beta.
 | Model versioning | Compare performance across model versions |
 | Retraining recommendations | AI-generated suggestions on when to retrain |
 | Team collaboration | Multi-user workspace access |
-| Baseline auto-detection from rolling window | Currently requires explicit call |
+| Baseline auto-detection from rolling window | Currently auto-set from first window |
 
 ### P2 — After paying customers (do not build yet)
 
@@ -476,6 +516,13 @@ features free forever regardless of tier.
 
 Local dashboard server runs on customer's machine. No AWS required.
 Stack: FastAPI + static HTML/JS + JSON files in ~/.modelsentry/
+
+**Hosting:** Netlify (landing pages)
+**Domain:** getmodelsentry.com (Namecheap)
+**Email:** getmodelsentry@gmail.com
+**Forms:** Netlify Forms (public waitlist) + Tally (private beta forms)
+**Repo:** github.com/treyhamilton/modelsentry (public)
+**PyPI:** pypi.org/project/modelsentry (v0.1.1)
 
 ### Phase 2 — AWS primary, containerized
 
@@ -540,9 +587,10 @@ Stack: FastAPI + static HTML/JS + JSON files in ~/.modelsentry/
 **Differentiators:**
 1. Raw data never leaves customer infrastructure (privacy by design)
 2. Local-first — no cloud setup, no account, works in 5 minutes
-3. Continuous proof of life — always shows monitoring state
-4. Priced for practitioners, not procurement teams
-5. Framework agnostic
+3. Zero config — three lines of Python and it just works
+4. Continuous proof of life — always shows monitoring state
+5. Priced for practitioners, not procurement teams
+6. Framework agnostic — works with any Python ML library
 
 ---
 
@@ -575,8 +623,9 @@ Stack: FastAPI + static HTML/JS + JSON files in ~/.modelsentry/
 55/55 tests. Validation notebook. All 3 assumptions proven.
 
 ### Phase 1 — Local Dashboard Server ✅ COMPLETE (May 2026)
-148/148 tests. `pip install modelsentry` live. getmodelsentry.com live.
-All 7 build steps done. Beta outreach in progress.
+153/153 tests. `pip install modelsentry` v0.1.1 live.
+getmodelsentry.com live. Beta communication infrastructure complete.
+Recruiting 5 beta users.
 
 Gate: 5 beta users actively using on real models → Phase 2
 
@@ -593,27 +642,21 @@ Public launch, content marketing, SOC 2, REST API, Enterprise tier
 
 ### Subagent hallucination (fixed in Version 2.0 subagent files)
 
-During POC build, all three custom subagents hallucinated reports — citing line
-numbers, fields, and imports that did not exist in the actual code. Root cause:
+During POC build, all three custom subagents hallucinated reports. Root cause:
 YAML frontmatter tool permissions were not correctly granting file read access.
 
-**Fix applied:** Subagent files have been rewritten in Version 2.0 with correct
-`allowedTools` syntax. Updated files must be committed before Phase 1 sessions.
-
-**Current workaround:** Until confirmed fixed, treat subagent reports as
-supplementary only. Trust Claude Code's own grep-based self-verification.
+**Fix applied:** Subagent files rewritten in Version 2.0 with correct
+`allowedTools` syntax. Fix was confirmed working during Phase 1 build —
+security-checker successfully read and verified storage.py and alerts.py.
 
 ---
 
-## OPEN QUESTIONS (validate with beta users — do not assume)
+## OPEN QUESTIONS (validate with beta users)
 
-1. What is the right default profile_window? (Currently: 100 predictions)
-2. Should `modelsentry serve` auto-open the browser on startup?
-3. SMTP or SendGrid for email alerts? (Ask human before implementing)
-4. Should the dashboard show partial data when a model has < profile_window predictions?
-5. Should profiles persist across server restarts? (Current plan: yes, via JSON files)
-6. What happens when prediction volume is very high (millions/day)?
-7. Will beta users want on-premise cloud deployment? (Defer until asked)
+1. What happens when prediction volume is very high (millions/day)?
+2. Will beta users want on-premise cloud deployment? (Defer until asked)
+3. Should the dashboard show partial data when model has < profile_window predictions?
+4. What is the right profile_window for high-frequency vs low-frequency models?
 
 ---
 
@@ -623,27 +666,28 @@ supplementary only. Trust Claude Code's own grep-based self-verification.
 
 ```
 Read CLAUDE.md and MODELSENTRY.md completely. Confirm you understand:
-1. Current phase: Phase 1 — Local Dashboard Server
-2. POC is complete — do not modify profiler.py, drift.py, or monitor.py
-3. Proof of Life requirement: dashboard must show continuous monitoring state
-4. Local-first architecture: no cloud infrastructure in Phase 1
-5. Dashboard binds to localhost only
-State the current Phase 1 build step and wait for instruction.
+1. Phase 1 is COMPLETE — 153/153 tests passing, pip install modelsentry v0.1.1 live
+2. We are in beta recruitment — do not build Phase 2 features
+3. Core SDK modules are frozen: profiler.py, drift.py — do not modify
+4. The product is fully open — no gated access
+5. Domain is getmodelsentry.com (not modelsentry.com)
+Then wait for instruction before proceeding.
 ```
 
 ### Hard constraints
 
 - SDK must NEVER transmit raw feature values or raw predictions
 - SDK overhead must remain < 5ms per call (currently 0.6μs — protect this)
-- Never modify profiler.py, drift.py, or monitor.py without explicit instruction
+- Never modify profiler.py or drift.py without explicit instruction
 - Dashboard must show continuous state — not only on drift events
 - Local server: localhost only, never 0.0.0.0
-- Do not add Phase 2 features during Phase 1
+- Do not add Phase 2 features during beta period
 - Python 3.11.9 only
 - All dependencies via Poetry — never pip install directly
 - Do not use Aurora-specific, DynamoDB-specific, or other lock-in services
+- Domain is getmodelsentry.com — never reference modelsentry.com
 
 ---
 
-*MODELSENTRY.md v2.1 — Updated post-Phase-1-completion, May 2026.*
+*MODELSENTRY.md v2.2 — Updated post-Phase-1-completion, beta infrastructure complete, May 2026.*
 *This file is the source of truth. An outdated file means Claude Code builds the wrong thing.*
