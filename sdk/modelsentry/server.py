@@ -25,6 +25,10 @@ from modelsentry.drift import DriftReport
 HOST = "127.0.0.1"
 DEFAULT_PORT = 8080
 MODEL_ID_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$"
+# Raw report cap used when collapsing the drift timeline into discrete state-
+# change events. Stored profiles flush every ~10s, so 200 covers ~33 minutes
+# of history — enough to surface every transition the dashboard needs.
+_DRIFT_EVENT_RAW_LIMIT = 200
 DEFAULT_DASHBOARD_PATH = (
     Path(__file__).resolve().parents[2] / "dashboard" / "index.html"
 )
@@ -176,6 +180,25 @@ class FeaturesResponse(BaseModel):
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+def _dedup_consecutive_severity(
+    reports: list[tuple[datetime, DriftReport]],
+) -> list[tuple[datetime, DriftReport]]:
+    """Collapse runs of same overall_severity into one event each.
+
+    ``reports`` is newest-first. Compares ONLY overall_severity — feature_results
+    content is irrelevant. Each surviving entry is anchored at the most recent
+    observation in its streak, producing a list of state-change events newest-first.
+    """
+    out: list[tuple[datetime, DriftReport]] = []
+    prev_sev: str | None = None
+    for entry in reports:
+        sev = entry[1].overall_severity
+        if sev != prev_sev:
+            out.append(entry)
+            prev_sev = sev
+    return out
 
 
 def _drift_to_model(ts: datetime, r: DriftReport) -> DriftReportModel:
@@ -361,13 +384,12 @@ def create_app(
     )
     def list_drift(
         model_id: str = PathParam(..., pattern=MODEL_ID_PATTERN),
-        limit: int = Query(10, ge=1, le=1000),
     ) -> list[DriftReportModel]:
         _require_known_model(model_id)
-        return [
-            _drift_to_model(ts, r)
-            for ts, r in storage.load_drift_reports_with_timestamps(model_id, limit=limit)
-        ]
+        raw = storage.load_drift_reports_with_timestamps(
+            model_id, limit=_DRIFT_EVENT_RAW_LIMIT
+        )
+        return [_drift_to_model(ts, r) for ts, r in _dedup_consecutive_severity(raw)]
 
     @app.get(
         "/api/models/{model_id}/features",
