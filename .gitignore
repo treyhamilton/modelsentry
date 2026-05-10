@@ -157,6 +157,12 @@ ENV/
 env.bak/
 venv.bak/
 
+# Demo SMTP credentials — never commit
+demos/.env
+
+# macOS
+.DS_Store
+
 # Spyder project settings
 .spyderproject
 .spyproject
