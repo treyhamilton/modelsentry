@@ -313,6 +313,56 @@ def test_drift_endpoint_includes_detected_at(client):
     assert parsed.tzinfo is not None
 
 
+def test_drift_endpoint_dedups_consecutive_severity(client):
+    """Consecutive same-severity reports collapse to one event each, newest-first.
+
+    Critically, reports with the same overall_severity but *different* feature_results
+    must still be collapsed — the comparison is ONLY on overall_severity.
+    """
+    storage.save_baseline(_make_profile(), "m1")
+
+    def _stub(severity: str, n_features: int) -> DriftReport:
+        """Build a stub with n_features drifting, to vary feature_results content."""
+        results = {
+            f"feat_{j}": FeatureDriftResult(
+                name=f"feat_{j}",
+                dtype="numeric",
+                severity=severity if severity != "stable" else "stable",
+                psi=0.3 if severity != "stable" else 0.01,
+                ks_statistic=None,
+                ks_p_value=None,
+                notes=[],
+            )
+            for j in range(n_features)
+        }
+        return DriftReport(
+            schema_version="1.0",
+            overall_severity=severity,
+            feature_results=results,
+            missing_in_current=(),
+            missing_in_baseline=(),
+        )
+
+    # Oldest → newest: stable, warning(2feat), warning(3feat), warning(2feat), stable, stable
+    # Same overall_severity with DIFFERENT feature_results must still collapse.
+    entries = [
+        ("2026-05-06T10-00-00", _stub("stable", 0)),
+        ("2026-05-06T10-01-00", _stub("warning", 2)),
+        ("2026-05-06T10-02-00", _stub("warning", 3)),  # different feature_results, same severity
+        ("2026-05-06T10-03-00", _stub("warning", 2)),  # back to 2 features, still warning
+        ("2026-05-06T10-04-00", _stub("stable", 0)),
+        ("2026-05-06T10-05-00", _stub("stable", 0)),
+    ]
+    for ts, report in entries:
+        storage.save_drift_report(report, "m1", timestamp=ts)
+
+    resp = client.get("/api/models/m1/drift")
+    assert resp.status_code == 200
+    body = resp.json()
+    # Two streaks → two state-change events; newest-first ordering preserved.
+    assert [e["overall_severity"] for e in body] == ["stable", "warning", "stable"]
+
+
 # ---------------------------------------------------------------------------
 # /api/models/{id}/features
 # ---------------------------------------------------------------------------

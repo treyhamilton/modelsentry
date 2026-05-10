@@ -172,6 +172,14 @@
       padding-bottom: 0.5rem;
       border-bottom: 1px solid var(--border);
     }
+    .section-title .scope {
+      text-transform: none;
+      letter-spacing: 0.02em;
+      font-weight: 400;
+      font-size: 0.95em;
+      margin-left: 0.6em;
+      color: var(--text);
+    }
 
     /* ── Drift table ─────────────────────────────────────────────────── */
     .table-scroll { overflow-x: auto; }
@@ -397,7 +405,7 @@ async function loadModel(id) {
     const [sr, fr, dr] = await Promise.all([
       fetch('/api/models/' + enc + '/status'),
       fetch('/api/models/' + enc + '/features'),
-      fetch('/api/models/' + enc + '/drift?limit=10'),
+      fetch('/api/models/' + enc + '/drift'),
     ]);
     if (sr.ok) S.status[id]   = await sr.json();
     if (fr.ok) S.features[id] = await fr.json();
@@ -483,7 +491,7 @@ function renderModelView(modelId) {
     (allStable ? renderNominalBanner() : '') +
     (features.length > 0 ? renderDriftTable(features) : '') +
     (features.length > 0 ? renderChartsSection(features) : '') +
-    renderAlertHistory(reports) +
+    renderAlertHistory(reports, modelId) +
   '</div>';
 }
 
@@ -577,12 +585,16 @@ function renderChartsSection(features) {
   '</div>';
 }
 
-function renderAlertHistory(reports) {
-  const title = '<h3 class="section-title">Recent Drift Events</h3>';
+function renderAlertHistory(reports, modelId) {
+  const title = '<h3 class="section-title">Recent Drift Events' +
+    (modelId ? '<span class="scope">· ' + esc(modelId) + '</span>' : '') +
+    '</h3>';
   if (!reports || reports.length === 0) {
     return '<div class="section">' + title + '<p class="muted" style="padding:0.5rem 0">No drift events recorded yet.</p></div>';
   }
 
+  // Server collapses consecutive same-severity reports into discrete events;
+  // we just render what we receive.
   const items = reports.map(r => {
     const ts  = r.detected_at ? fmtTimestamp(r.detected_at) : '—';
     const sev = r.overall_severity || 'unknown';

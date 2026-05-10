@@ -10,3 +10,8 @@
   from = "/waitlist"
   to = "/waitlist.html"
   status = 200
+
+[[redirects]]
+  from = "/demo"
+  to = "/demo.html"
+  status = 200

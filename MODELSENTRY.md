@@ -446,6 +446,18 @@ Fix in Phase 2. Do not fix in Phase 1 without explicit instruction.
 3. **Integer predictions treated as regression:** Low-cardinality int class IDs
    (0/1) profiled as regression. String labels work correctly. Fix in Phase 2.
 
+4. **bin_edges never forwarded by monitor.py (P0 — affects all users):**
+   _compute_and_dispatch in monitor.py calls profile(df, preds) without
+   passing baseline_edges. Result: every numeric feature reports
+   severity="warning" with bin-edges mismatch notes even when distributions
+   are stable. Critical drift can never escalate past warning for numeric
+   features. Fix: load baseline in _compute_and_dispatch, extract bin edges,
+   pass baseline_edges= into profile(). Pair fix with an end-to-end
+   integration test covering the full @ms.monitor() → save → load →
+   detect_drift chain. Demo workaround: manages a parallel raw buffer in
+   demo.py — not viable for real customers since profile_handler only
+   receives Profile objects, not raw data.
+
 ---
 
 ## FEATURE PRIORITY TIERS
