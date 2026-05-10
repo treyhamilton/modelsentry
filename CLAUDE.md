@@ -40,6 +40,13 @@ detects drift, and serves a visual dashboard at localhost:8080.
 - `notebooks/poc_validation.ipynb` — validation notebook ✅
 - **Total: 55/55 tests passing**
 
+**Demo environment:**
+- `demos/demo.py` — main demo script, 3 modes (walkthrough/fast/slow)
+- `demos/models.py` — 3 simulated models with baseline/warning/critical states
+- `demos/README.md` — setup and run instructions
+- `demos/.env.example` — SMTP credential template
+- `landing/demo.html` — static interactive dashboard demo page
+
 ### What we are building in Phase 1
 
 ```
@@ -162,6 +169,9 @@ modelsentry/
 - Never commit directly to main — always use a feature branch
 - Branch naming: `feature/module-name`
 - Run `/ultrareview` before merging to main
+
+### Hard Constraints
+- Always use `pip install -e sdk/` for local development — never rely on the PyPI version. The PyPI package (v0.1.1) does not include local changes to server.py, storage.py, or dashboard files.
 
 ---
 

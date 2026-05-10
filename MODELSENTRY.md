@@ -96,6 +96,41 @@ Profiles auto-save to `~/.modelsentry/churn-v3/`. Baseline auto-detected on firs
 
 ---
 
+## DEMO ENVIRONMENT
+
+### Demo Environment (added May 2026)
+
+A self-contained demo script for sales calls and personal QA.
+
+**Location:** demos/ folder
+**Models:** churn-v3, lead-score-v2, fraud-detect-v4
+**Setup:**
+  cd demos
+  cp .env.example .env        # fill in SMTP_USER + SMTP_PASSWORD
+  pip install -r requirements.txt
+  pip install -e ../sdk/      # required — use local SDK, not PyPI
+
+**Run modes:**
+  python demo.py walkthrough  # sales calls — first time
+  python demo.py fast         # sales calls — repeat
+  python demo.py slow         # personal QA — 25 min unattended
+
+**Keypress map (fast/walkthrough mode):**
+  1 → WARNING drift on churn-v3
+  2 → CRITICAL drift on churn-v3
+  3 → WARNING drift on lead-score-v2
+  4 → CRITICAL drift on lead-score-v2
+  5 → WARNING drift on fraud-detect-v4
+  6 → CRITICAL drift on fraud-detect-v4
+  r → reset all models to stable
+  q → quit
+
+**Architecture note:** The demo bypasses the SDK's default profile_handler because
+monitor.py does not forward baseline_edges to profile() — see Known Technical Debt
+item #4. The demo manages its own raw buffer and calls profile() with aligned edges directly.
+
+---
+
 ## NORTH STAR
 
 > "ModelSentry gives data teams early warning when their production ML models
