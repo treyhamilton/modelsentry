@@ -223,3 +223,6 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 ~$*
+
+# Private strategy docs — never commit
+.private/
