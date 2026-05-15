@@ -142,3 +142,10 @@ Have feedback on the dashboard or alert format? Same place. We read every one.
 ## License
 
 MIT
+
+
+## Internal documentation
+
+Product strategy, PRDs, and operational runbooks are maintained in a private
+location outside this repository. Contributors who need access should contact
+getmodelsentry@gmail.com.
