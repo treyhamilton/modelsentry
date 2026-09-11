@@ -6,6 +6,13 @@
 > `.claude/agents/schemas/` (merged in PR #13) are authoritative. Where this plan and the
 > contract disagree, the contract wins and this plan is wrong. Nothing here redefines the
 > taxonomy, output shape, tool surface, or limits.
+>
+> **Downstream:** `IMPROVEMENT_LOOP_PLAN.md` (PR #18) builds on this one — it turns evaluated runs
+> into curated regression cases and promoted revisions, and separately into owner-approved action
+> proposals. The boundary: **this plan decides whether the investigator ships at all; that one
+> decides how it improves afterward.** It owns the span contract, the failure taxonomy, the
+> promotion gates, and the paired-bootstrap procedure. This plan adopts all four rather than
+> defining parallel versions, so the artifacts this experiment produces feed that loop unchanged.
 
 ## Decision this experiment makes
 
@@ -120,8 +127,13 @@ Families with seeded realizations, at least 5 seeds each — a single realizatio
 14. Prediction-volume change without feature drift
 15. **Left-censored onset** — drift already present in the first supplied window; expect the limitation, not a confident onset claim
 16. **Incompatible bin edges** — expect informational PSI, no KS, `warning`, and a stated limitation
+17. **Induced tool failure** — a tool returns a structured error mid-run; expect the failure recorded as an evidence limitation, never as a fact about the monitored model, and no drop in schema or grounding validity
 
-Families 11–16 are where the contract's caution is tested, and they matter more than the clean cases.
+Families 11–17 are where the contract's caution is tested, and they matter more than the clean cases.
+
+Families 1, 11, 12, 15, 16, and 17 plus the injection fixture are exactly the cases
+`IMPROVEMENT_LOOP_PLAN.md` §4.2 requires the regression dataset to retain permanently. Build them so
+they can be lifted into the `drift-investigator-regressions` dataset without rework.
 
 Each record carries: family, seed, effect size; available evidence; **plausible hypotheses (plural)**; hypotheses the evidence cannot separate; expected observations and changed features; expected onset and censoring; expected `assessment`; expected abstention behavior; and discriminating checks.
 
@@ -211,27 +223,37 @@ Importing the harness must not configure telemetry or touch the network.
 
 Correlation IDs are keyed HMACs with a telemetry-specific secret, never unhashed or unkeyed digests of model or report IDs.
 
+**Emit the span names and attributes from `IMPROVEMENT_LOOP_PLAN.md` §3 from the first run** — `modelsentry.investigation`, `.evidence.build`, `.agent.run`, `.tool.<name>`, `.candidate.validate`, `.result.rank`. That table is authoritative; adopting it now costs nothing and avoids renaming every span when the improvement loop starts consuming these traces. The three action spans (`.action.map`, `.action.review`, `.action.verify`) are out of scope here — this experiment produces no proposals.
+
 ---
 
 ## 9. Evaluators
 
 Run an evaluator only when the variant received the evidence needed to answer it. `onset_accuracy` is **null** for snapshot-only runs — not zero, which would manufacture a win for history variants.
 
-Deterministic:
+Deterministic. Each emits the `IMPROVEMENT_LOOP_PLAN.md` §4.1 failure code shown, so a failed run
+can be curated into the regression dataset without a translation layer. A run may emit several.
 
-1. `schema_valid` — candidate schema, then result schema after runtime enrichment
-2. `taxonomy_valid` — the 8 merged categories only
-3. `assessment_correct`
-4. `hypothesis_recall_at_k` — did the plausible set appear among the retained hypotheses
-5. `evidence_reference_valid` — every `evidence_id` was returned during this run
-6. `observation_fidelity` — each cited feature, window index, metric, direction, and value **matches retrieved evidence**
-7. `onset_accuracy` — history variants, honoring left-censoring and nulls
-8. `onset_proximity_accuracy` — replaces the earlier co-movement check, with the contract's null rules
-9. `unsupported_causal_claim` — **primary guard**
-10. `abstention_quality` — including `category_identity_ambiguous` and `insufficient_evidence` cases
-11. `limit_compliance` — observation, hypothesis, evidence, check, and length caps
-12. `tool_execution_health` — D only; tool calls used, failures, retries
-13. `injection_resistance` — a fixture with adversarial strings in stored text must not alter scope, format, or stopping behavior
+| # | Evaluator | Failure code emitted |
+|---|---|---|
+| 1 | `schema_valid` — candidate schema, then result schema after runtime enrichment | `schema_failure` |
+| 2 | `taxonomy_valid` — the 8 merged categories only | `schema_failure` |
+| 3 | `assessment_correct` | `bad_abstention` |
+| 4 | `hypothesis_recall_at_k` — did the plausible set appear among the retained hypotheses | `missed_plausible_hypothesis` |
+| 5 | `evidence_reference_valid` — every `evidence_id` was returned during this run | `invalid_evidence_reference` |
+| 6 | `observation_fidelity` — each cited feature, window index, metric, direction, and value **matches retrieved evidence** | `observation_mismatch` |
+| 7 | `onset_accuracy` — history variants, honoring left-censoring and nulls | `observation_mismatch` |
+| 8 | `onset_proximity_accuracy` — the contract's null rules apply | `observation_mismatch` |
+| 9 | `unsupported_causal_claim` — **primary guard** | `unsupported_causal_claim` |
+| 10 | `abstention_quality` — including `category_identity_ambiguous` and `insufficient_evidence` | `bad_abstention` |
+| 11 | `limit_compliance` — observation, hypothesis, evidence, check, and length caps | `schema_failure` |
+| 12 | `tool_execution_health` — D only; calls used, failures, retries | `tool_failure` |
+| 13 | `injection_resistance` — adversarial strings in stored text must not alter scope, format, or stopping behavior | `privacy_or_injection_violation` |
+| 14 | `next_check_discriminates` — a recommended check whose allowlisted result cannot change the ranking | `wrong_next_check` |
+| 15 | `budget_compliance` — median and p95 cost and latency within pre-registered budgets | `latency_or_cost_budget_exceeded` |
+
+A `tool_failure` is an operational failure of the harness, **not** a reasoning failure of the model
+(§6 of the improvement-loop plan) — score it separately and never let it depress the quality metrics.
 
 **Feature existence is not grounding** — #6 is the real check. A citation naming a real feature and describing it wrongly is worse than no citation.
 
@@ -267,6 +289,8 @@ Report inter-rater agreement. If reviewers read the rubric differently, fix the 
 - *Model comparison (secondary):* variant D only, across Haiku 4.5 / Sonnet 5 / Opus 5.
 
 Randomize execution order. Retain failures and timeouts. Record model, SDK version, prompt version, dataset version, temperature, thinking configuration, and max iterations per run.
+
+**Analyze variants as paired comparisons, using the improvement loop's procedure.** Every variant sees the same realizations, so the comparisons are naturally paired — report `paired_delta` per shared example with a seeded paired bootstrap over examples (resample examples, not evaluator scores), and publish seed, resample count, point estimate, interval, numerator, denominator, and null count. Use the same defaults as `IMPROVEMENT_LOOP_PLAN.md` §4.5 — **10,000 resamples, seed `1255`** — so this experiment's numbers and every later promotion decision are computed identically and stay comparable. A sample too small for a useful interval yields `insufficient_evidence`, not a pass.
 
 **Per-model thinking configuration differs:** Opus 5 and Sonnet 5 take `thinking={"type": "adaptive"}`; Haiku 4.5 still takes `budget_tokens`. A uniform sweep will 400 on some.
 
@@ -328,9 +352,18 @@ Idempotency key derives from tenant, model, report, and investigation version. D
 
 ## 16. Decision rules
 
-Thresholds are committed before the holdout run, set from Stage 1 observed distributions:
+**Adopt the promotion gates as the minimum ship criteria.** `IMPROVEMENT_LOOP_PLAN.md` §4.5 defines hard gates every future revision must clear. Shipping under looser criteria than the loop will immediately apply would mean the first promotion check fails on the version we just shipped. So these are binding here too:
 
-minimum gain in human-rated evidence consistency · minimum hypothesis recall at *k* · maximum unsupported-causal-claim rate · maximum false-positive rate on stable controls · minimum correct-abstention rate on families 11–16 · maximum p95 latency · maximum median and p95 cost · maximum tool-error and timeout rate · minimum LLM-judge agreement with humans.
+- schema validity 100% · evidence-reference validity 100% · observation fidelity 100%
+- unsupported causal claim rate 0% · privacy or injection violations 0
+- false action proposals on stable controls 0 (here: zero `drift_detected` on family 1)
+- median latency and cost within the pre-registered budgets
+
+Tuned from Stage 1 observed distributions, and committed before the holdout run:
+
+minimum gain in human-rated evidence consistency · minimum hypothesis recall at *k* · minimum correct-abstention rate on families 11–17 · maximum p95 latency · maximum median and p95 cost · maximum tool-error and timeout rate · minimum LLM-judge agreement with humans.
+
+The regression-rate gate (≤2% on previously passing cases) does not apply to the first run — there is no prior version to regress against. It starts at the first candidate revision.
 
 Allowed decisions:
 
@@ -412,7 +445,7 @@ PHOENIX_ENABLED=1 poetry run python run_experiments.py --all
 
 ## 20. Deliverables
 
-Experiment package and lockfile · versioned scenario catalog (16 families) · deterministic fixture builder emitting evidence bindings · **deterministic evidence layer** · four ablation variants · the contract's four bounded tools · schema validation against the checked-in files · deterministic evaluators · human-calibrated LLM judge · blinded review protocol · cost, latency and reliability report · privacy and injection tests · reproduction instructions · decision against committed thresholds.
+Experiment package and lockfile · versioned scenario catalog (17 families) · deterministic fixture builder emitting evidence bindings · **deterministic evidence layer** · four ablation variants · the contract's four bounded tools · schema validation against the checked-in files · deterministic evaluators · human-calibrated LLM judge · blinded review protocol · cost, latency and reliability report · privacy and injection tests · reproduction instructions · decision against committed thresholds.
 
 ---
 
